@@ -1,0 +1,29 @@
+{
+  "name": "fantasy-football-manager",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "npm run build -w @ffm/client && node scripts/build-server.mjs",
+    "vercel-build": "node scripts/vercel-build.mjs",
+    "start": "node dist/server/local.mjs",
+    "seed": "tsx tools/importer/build-seed.ts",
+    "harness": "tsx tools/harness/calibrate.ts",
+    "typecheck": "tsc -p packages/engine && tsc -p packages/shared && tsc -p packages/server && tsc -p packages/client",
+    "test": "node --import tsx --test packages/engine/test/*.test.ts",
+    "tick": "tsx scripts/tick.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,601 @@
+# Premier League 2026-27 first-team squads, compiled from Wikipedia club and
+# 2026-27 season articles (fetched 2026-09-23). Loanees out removed.
+# Format:  No|Pos|Nation|Name     (Pos: GK/DF/MF/FW or detailed)
+# Re-run `npm run seed` after editing this file.
+
+== Arsenal
+1|GK|ESP|David Raya
+13|GK|ESP|Kepa Arrizabalaga
+30|GK|FRA|Illan Meslier
+2|DF|FRA|William Saliba
+3|DF|ESP|Cristhian Mosquera
+4|DF|ENG|Ben White
+5|DF|ECU|Piero Hincapié
+6|DF|BRA|Gabriel Magalhães
+12|DF|NED|Jurriën Timber
+15|DF|ENG|Ezri Konsa
+33|DF|ITA|Riccardo Calafiori
+49|DF|ENG|Myles Lewis-Skelly
+8|MF|NOR|Martin Ødegaard
+10|MF|ENG|Eberechi Eze
+23|MF|ESP|Mikel Merino
+36|MF|ESP|Martín Zubimendi
+39|MF|BRA|Bruno Guimarães
+41|MF|ENG|Declan Rice
+7|FW|ENG|Bukayo Saka
+14|FW|SWE|Viktor Gyökeres
+17|FW|GRE|Christos Tzolis
+20|FW|ENG|Noni Madueke
+29|FW|GER|Kai Havertz
+56|FW|ENG|Max Dowman|16|69
+
+== Aston Villa
+1|GK|JPN|Zion Suzuki
+40|GK|NED|Marco Bizot
+42|GK|ENG|James Wright
+2|DF|POL|Matty Cash
+3|DF|SWE|Victor Lindelöf
+4|DF|ENG|Taylor Harwood-Bellis
+5|DF|ENG|Tyrone Mings
+13|DF|ITA|Matteo Ruggeri
+14|DF|ESP|Pau Torres
+22|DF|NED|Ian Maatsen
+29|DF|COD|Aaron Wan-Bissaka
+48|DF|SEN|Modou Kéba Cissé
+55|DF|ENG|Travis Patterson|19|60
+6|MF|ENG|Ross Barkley
+7|MF|SCO|John McGinn
+8|MF|FRA|Boubacar Kamara
+10|MF|ARG|Emiliano Buendía
+20|MF|ENG|Jamaldeen Jimoh-Aloba|19|65
+24|MF|BEL|Amadou Onana
+26|MF|NED|Lamare Bogarde
+27|MF|GER|Leon Goretzka
+35|MF|BRA|João Gomes
+44|MF|SUI|Johan Manzambi
+79|MF|SCO|Fletcher Boyd|18|58
+11|FW|SEN|Nicolas Jackson
+17|FW|ARG|Alejandro Garnacho
+18|FW|ENG|Tammy Abraham
+19|FW|SEN|Ibrahim Mbaye
+39|FW|ENG|Brian Madjo|17|59
+47|FW|BRA|Alysson|20|69
+53|FW|ENG|George Hemmings|18|58
+57|FW|SCO|Rory Wilson|20|62
+
+== AFC Bournemouth
+1|GK|SRB|Đorđe Petrović
+17|GK|ENG|Fraser Forster|38|72
+20|GK|ITA|Michele Di Gregorio
+2|DF|MEX|Julián Araujo
+3|DF|FRA|Adrien Truffert
+5|DF|ENG|James Hill
+6|DF|ARG|Julio Soler
+14|DF|POR|António Silva
+15|DF|ENG|Adam Smith
+18|DF|FRA|Bafodé Diakité
+24|DF|ESP|Juanlu Sánchez
+28|DF|ENG|Max Aarons
+44|DF|SRB|Veljko Milosavljević
+4|MF|ENG|Lewis Cook
+7|MF|WAL|David Brooks
+8|MF|ENG|Alex Scott
+10|MF|SCO|Ryan Christie
+12|MF|USA|Tyler Adams
+16|MF|ENG|Marcus Tavernier
+21|MF|MAR|Amine Adli
+27|MF|HUN|Alex Tóth
+9|FW|BRA|Evanilson
+11|FW|SCO|Ben Gannon-Doak
+19|FW|NED|Justin Kluivert
+22|FW|FRA|Eli Junior Kroupi
+29|FW|CAN|Daniel Jebbison
+30|FW|URU|Álvaro Rodríguez
+37|FW|BRA|Rayan|20|73
+
+== Brentford
+1|GK|IRL|Caoimhín Kelleher
+12|GK|ISL|Hákon Valdimarsson
+31|GK|ENG|Ellery Balcombe
+2|DF|SCO|Aaron Hickey
+3|DF|JAM|Rico Henry
+4|DF|NED|Sepp van den Berg
+20|DF|NOR|Kristoffer Ajer
+22|DF|IRL|Nathan Collins
+25|DF|SEN|El Hadji Malick Diouf
+33|DF|ITA|Michael Kayode
+36|DF|KOR|Kim Ji-soo
+44|DF|AUT|Jannik Schuster
+48|DF|NGA|Benjamin Fredrick
+6|MF|UKR|Yehor Yarmolyuk
+8|MF|DEN|Mathias Jensen
+10|MF|ENG|Josh Dasilva
+14|MF|POR|Fábio Carvalho
+17|MF|NED|Antoni Milambo
+18|MF|MLI|Mamadou Sangaré
+24|MF|DEN|Mikkel Damsgaard
+27|MF|GER|Vitaly Janelt
+7|FW|GER|Kevin Schade
+9|FW|BRA|Igor Thiago
+11|FW|BFA|Dango Ouattara
+13|FW|ENG|Callum Wilson
+19|FW|ENG|Jaidon Anthony
+23|FW|ENG|Keane Lewis-Potter
+39|FW|BRA|Gustavo Nunes
+47|FW|BEL|Kaye Furo
+
+== Brighton & Hove Albion
+1|GK|NED|Bart Verbruggen
+23|GK|ENG|Jason Steele
+38|GK|CAN|Tom McGill
+4|DF|NED|Pascal Struijk
+5|DF|ENG|Lewis Dunk
+6|DF|ALG|Jaouen Hadjam
+16|DF|IRL|Eiran Cashin
+20|DF|POR|Costinha
+21|DF|FRA|Olivier Boscagli
+24|DF|TUR|Ferdi Kadıoğlu
+27|DF|NED|Mats Wieffer
+29|DF|BEL|Maxim De Cuyper
+30|DF|AUT|Michael Svoboda
+44|DF|CRO|Luka Vušković
+7|MF|JPN|Kaoru Mitoma
+8|MF|ENG|Jack Hinshelwood
+11|MF|GAM|Yankuba Minteh
+13|MF|GER|Pascal Groß
+15|MF|GHA|Ibrahim Osman
+22|MF|ENG|Amario Cozier-Duberry
+25|MF|PAR|Diego Gómez
+26|MF|SWE|Yasin Ayari
+33|MF|DEN|Matt O'Riley
+35|MF|CIV|Malick Yalcouyé
+36|MF|NGA|Zadok Yohanna
+14|MF|POR|Rodrigo Rêgo|20|69
+18|MF|ESP|Chema Andrés
+9|FW|GRE|Stefanos Tzimas
+10|FW|FRA|Georginio Rutter
+12|FW|CAN|Promise David
+19|FW|GRE|Charalampos Kostoulas
+28|FW|IRL|Evan Ferguson
+17|FW|ENG|Femi Azeez
+
+== Chelsea
+1|GK|ARG|Emiliano Martínez
+28|GK|ENG|Teddy Sharman-Lowe
+39|GK|BEL|Mike Penders
+44|GK|USA|Gabriel Slonina
+2|DF|ITA|Marco Palestra
+3|DF|FRA|Wesley Fofana
+5|DF|FRA|Maxence Lacroix
+6|DF|ENG|Levi Colwill
+21|DF|NED|Jorrel Hato
+24|DF|ENG|Reece James
+27|DF|FRA|Malo Gusto
+29|DF|ESP|Pep Chavarría
+30|DF|ARG|Aarón Anselmino
+34|DF|ENG|Josh Acheampong
+37|DF|ENG|Olutayo Subuloye|19|58
+4|MF|ARG|Valentín Barco
+10|MF|ENG|Cole Palmer
+14|MF|ENG|Jordan Henderson
+17|MF|ENG|Morgan Rogers
+25|MF|ECU|Moisés Caicedo
+31|MF|ENG|Reggie Watson|18|58
+32|MF|ENG|Mahdi Nicoll-Jazuli|18|58
+45|MF|BEL|Roméo Lavia
+7|FW|POR|Pedro Neto
+9|FW|BRA|João Pedro
+11|FW|ENG|Jamie Gittens
+18|FW|ENG|Danny Welbeck
+22|FW|NED|Emmanuel Emegha
+23|FW|POR|Geovany Quenda
+41|FW|BRA|Estêvão
+
+== Coventry City
+13|GK|ENG|Ben Wilson
+19|GK|ENG|Carl Rushworth
+25|GK|ENG|Dan Bentley
+2|DF|JAM|Ethan Pinnock
+3|DF|WAL|Jay Dasilva
+4|DF|ENG|Bobby Thomas
+20|DF|ENG|Kaine Kesler-Hayden
+21|DF|ENG|Jake Bidwell
+22|DF|JAM|Joel Latibeaudiere
+24|DF|SUI|Aurèle Amenda
+26|DF|ENG|Luke Woolfenden
+27|DF|NED|Milan van Ewijk
+30|DF|ENG|Stephen Mfuni|19|62
+5|MF|ENG|Jack Rudoni
+6|MF|ENG|Matt Grimes
+8|MF|GHA|Caleb Yirenkyi
+16|MF|NGA|Frank Onyeka
+28|MF|ENG|Josh Eccles
+29|MF|DEN|Victor Torp
+38|MF|NED|Gustavo Hamer
+7|FW|JPN|Tatsuhiro Sakamoto
+9|FW|ENG|Ellis Simms
+10|FW|JAM|Ephron Mason-Clark
+11|FW|USA|Haji Wright
+14|FW|NGA|Taiwo Awoniyi
+18|FW|FRA|Loum Tchaouna
+23|FW|GHA|Brandon Thomas-Asante
+49|FW|GUI|Sidiki Cherif
+15|FW|FRA|Yann Gboho
+
+== Crystal Palace
+1|GK|ENG|Dean Henderson
+31|GK|ENG|Remi Matthews
+44|GK|ARG|Walter Benítez
+3|DF|ENG|Tyrick Mitchell
+4|DF|MAR|Chadi Riad
+5|DF|FRA|Axel Disasi
+6|DF|FRA|Jaydee Canvot
+17|DF|JPN|Takehiro Tomiyasu|27|76
+21|DF|ITA|Honest Ahanor
+25|DF|ISR|Anan Khalaili
+26|DF|USA|Chris Richards
+30|DF|ESP|Óscar Mingueza
+33|DF|ENG|Ben Chilwell
+8|MF|COL|Jefferson Lerma
+18|MF|JPN|Daichi Kamada
+19|MF|ENG|Will Hughes
+20|MF|ENG|Adam Wharton
+23|MF|NED|Quinten Timber
+28|MF|MLI|Cheick Doucouré
+7|FW|SEN|Ismaïla Sarr
+9|FW|ENG|Eddie Nketiah
+10|FW|ESP|Yéremy Pino
+11|FW|ENG|Dwight McNeil
+12|FW|USA|Zavier Gozo
+14|FW|FRA|Jean-Philippe Mateta
+22|FW|NOR|Jørgen Strand Larsen
+24|FW|CHI|Darío Osorio
+29|FW|CIV|Evann Guessand
+
+== Everton
+1|GK|ENG|Jordan Pickford
+12|GK|IRL|Mark Travers
+31|GK|WAL|Tom King
+2|DF|ENG|Ainsley Maitland-Niles
+4|DF|ENG|Jarrad Branthwaite
+5|DF|ENG|Michael Keane
+6|DF|ENG|James Tarkowski
+15|DF|IRL|Jake O'Brien
+16|DF|UKR|Vitalii Mykolenko
+8|MF|ENG|Kiernan Dewsbury-Hall
+23|MF|DEN|Christian Nørgaard
+24|MF|ARG|Charly Alcaraz
+30|MF|ENG|Hayden Hackney
+34|MF|GER|Merlin Röhl
+37|MF|ENG|James Garner
+45|MF|ENG|Harrison Armstrong
+10|FW|ENG|Jack Grealish
+11|FW|FRA|Thierno Barry
+19|FW|ENG|Tyrique George
+20|FW|ENG|Tyler Dibling
+22|FW|WAL|Brennan Johnson
+
+== Fulham
+1|GK|GER|Bernd Leno
+23|GK|FRA|Benjamin Lecomte
+2|DF|NED|Kenny Tete
+3|DF|NGA|Calvin Bassey
+4|DF|ESP|Jorge Cuenca
+5|DF|DEN|Joachim Andersen
+21|DF|BEL|Timothy Castagne
+30|DF|ENG|Ryan Sessegnon
+33|DF|USA|Antonee Robinson
+6|MF|ENG|Harrison Reed
+8|MF|ESP|César Palacios|22|70
+10|MF|SCO|Tom Cairney
+15|MF|SWE|Hugo Larsson
+16|MF|NOR|Sander Berge
+17|MF|NGA|Alex Iwobi
+19|MF|NIR|Shea Charles
+24|MF|ENG|Josh King
+32|MF|ENG|Emile Smith Rowe
+34|MF|ENG|Chibuzo Nwoko|20|58
+7|FW|ESP|Gonzalo García
+9|FW|BRA|Rodrigo Muniz
+11|FW|BRA|Kevin
+14|FW|NOR|Oscar Bobb
+18|FW|SWE|Jonah Kusi-Asare
+35|FW|CMR|Macauley Zepa|19|58
+
+== Hull City
+1|GK|ENG|Jack Butland
+12|GK|ENG|Dillon Phillips
+19|GK|GRE|Konstantinos Tzolakis
+2|DF|ENG|Lewie Coyle
+3|DF|ENG|Ryan Giles
+4|DF|ENG|Charlie Hughes
+6|DF|NGA|Semi Ajayi
+15|DF|IRL|John Egan
+17|DF|NIR|Paddy McNair
+18|DF|ENG|Brooke Norton-Cuffy
+22|DF|AUS|Lucas Herrington
+23|DF|ENG|Matt Targett
+32|DF|SEN|Nobel Mendy
+5|MF|JPN|Hidemasa Morita
+8|MF|BEL|Eliot Matazo
+14|MF|NOR|Jens Hjertø-Dahl
+20|MF|ECU|Óscar Zambrano|22|71
+24|MF|ENG|Darko Gyabi
+25|MF|ENG|Matt Crooks
+26|MF|ENG|Kieran Dowell
+27|MF|ENG|Regan Slater
+29|MF|FRA|Lucas Gourna-Douath
+36|MF|GRE|Christos Mouzakitis
+42|MF|ENG|Tim Iroegbunam
+33|MF|TUR|Abdülkadir Ömür
+7|FW|WAL|Sorba Thomas
+9|FW|SCO|Oli McBurnie
+10|FW|ALG|Mohamed Belloumi
+11|FW|ENG|Joe Gelhardt
+21|FW|SWE|Elliot Stroud
+28|FW|FRA|Robinio Vaz
+50|FW|FRA|Mohamed-Ali Cho
+
+== Ipswich Town
+1|GK|ENG|Alex Palmer
+27|GK|ENG|David Button
+28|GK|ENG|Christian Walton
+37|GK|NED|Kjell Scherpen
+2|DF|ENG|Darnell Furlong
+3|DF|ENG|Leif Davis
+4|DF|CIV|Cédric Kipré
+6|DF|MAR|Issa Diop
+24|DF|ENG|Jacob Greaves
+26|DF|IRL|Dara O'Shea
+42|DF|CIV|Abdoul Ouattara
+5|MF|NED|Azor Matusiwa
+12|MF|POR|Florentino Luís
+14|MF|IRL|Jack Taylor
+21|MF|IRL|Chiedozie Ogbene
+23|MF|SRB|Saša Lukić
+25|MF|ARG|Exequiel Palacios
+30|MF|ENG|Cameron Humphreys
+32|MF|CHI|Marcelino Núñez
+7|FW|GHA|Abdul Fatawu
+8|FW|NOR|Sindre Walle Egeli
+10|FW|PAR|Julio Enciso
+11|FW|ENG|Jaden Philogene
+19|FW|BRA|Emersonn
+20|FW|IRL|Kasey McAteer
+29|FW|ENG|Chuba Akpom
+33|FW|ALB|Anis Mehmeti
+38|FW|JPN|Daizen Maeda
+47|FW|ENG|Jack Clarke
+
+== Leeds United
+1|GK|ENG|James Trafford
+16|GK|GER|Michael Zetterer
+21|GK|ENG|Alex Cairns
+2|DF|ENG|Jayden Bogle
+3|DF|SWE|Gabriel Gudmundsson
+5|DF|BIH|Tarik Muharemović
+6|DF|WAL|Joe Rodon
+15|DF|SVN|Jaka Bijol
+24|DF|ENG|James Justin
+25|DF|ENG|Sam Byram
+26|DF|FRA|Melvin Bard
+30|DF|SUI|Nico Elvedi
+4|MF|WAL|Ethan Ampadu
+7|MF|WAL|Daniel James
+8|MF|ENG|Sean Longstaff
+11|MF|USA|Brenden Aaronson
+18|MF|GER|Anton Stach
+22|MF|JPN|Ao Tanaka
+44|MF|BUL|Ilia Gruev
+9|FW|ENG|Dominic Calvert-Lewin
+10|FW|WAL|Harry Wilson
+14|FW|GER|Lukas Nmecha
+19|FW|SUI|Noah Okafor
+23|FW|FRA|Jean-Mattéo Bahoya
+27|FW|ESP|Mateo Joseph
+
+== Liverpool
+1|GK|BRA|Alisson Becker
+25|GK|GEO|Giorgi Mamardashvili
+28|GK|ENG|Freddie Woodman
+56|GK|CZE|Vítězslav Jaroš
+2|DF|ENG|Joe Gomez
+4|DF|NED|Virgil van Dijk
+5|DF|FRA|Jérémy Jacquet
+6|DF|HUN|Milos Kerkez
+12|DF|NIR|Conor Bradley
+15|DF|ITA|Giovanni Leoni
+21|DF|GRE|Kostas Tsimikas
+30|DF|NED|Jeremie Frimpong
+33|DF|URU|Ronald Araújo
+3|MF|JPN|Wataru Endo
+7|MF|GER|Florian Wirtz
+8|MF|HUN|Dominik Szoboszlai
+10|MF|ARG|Alexis Mac Allister
+38|MF|NED|Ryan Gravenberch
+42|MF|ENG|Trey Nyoni
+53|MF|ENG|James McConnell
+9|FW|SWE|Alexander Isak
+14|FW|ITA|Federico Chiesa
+18|FW|NED|Cody Gakpo
+22|FW|FRA|Hugo Ekitike
+23|FW|ESP|Víctor Muñoz
+29|FW|FRA|Bradley Barcola
+73|FW|ENG|Rio Ngumoha
+
+== Manchester City
+1|GK|ITA|Gianluigi Donnarumma
+13|GK|ENG|Marcus Bettinelli
+28|GK|ARG|Gerónimo Rulli
+3|DF|POR|Rúben Dias
+6|DF|ENG|Marc Guéhi
+21|DF|ALG|Rayan Aït-Nouri
+22|DF|BRA|Vitor Reis
+24|DF|CRO|Joško Gvardiol
+27|DF|POR|Matheus Nunes
+45|DF|UZB|Abdukodir Khusanov
+59|DF|ENG|Josh Wilson-Esbrand
+61|DF|ENG|Kaden Braithwaite|19|63
+82|DF|ENG|Rico Lewis
+5|MF|ENG|Elliot Anderson
+8|MF|CRO|Mateo Kovačić
+10|MF|FRA|Rayan Cherki
+17|MF|ARG|Enzo Fernández
+32|MF|MAR|Ayyoub Bouaddi
+33|MF|ENG|Nico O'Reilly
+47|MF|ENG|Phil Foden
+75|MF|FRA|Floyd Samba|19|63
+7|FW|SEN|Iliman Ndiaye
+9|FW|NOR|Erling Haaland
+11|FW|BEL|Jérémy Doku
+37|FW|BRA|Allan
+42|FW|GHA|Antoine Semenyo
+56|FW|ENG|Ryan McAidoo|18|62
+
+== Manchester United
+1|GK|BEL|Senne Lammens
+12|GK|WAL|Karl Darlow
+22|GK|ENG|Tom Heaton
+45|GK|NIR|Dermot Mee|20|58
+2|DF|POR|Diogo Dalot
+3|DF|MAR|Noussair Mazraoui
+4|DF|NED|Matthijs de Ligt
+5|DF|ENG|Harry Maguire
+6|DF|ARG|Lisandro Martínez
+13|DF|DEN|Patrick Dorgu
+15|DF|FRA|Leny Yoro
+23|DF|ENG|Luke Shaw
+26|DF|ENG|Ayden Heaven
+41|DF|ENG|Harry Amass
+7|MF|ENG|Mason Mount
+8|MF|POR|Bruno Fernandes
+17|MF|BRA|Andrey Santos
+18|MF|BEL|Youri Tielemans
+20|MF|CMR|Carlos Baleba
+25|MF|URU|Manuel Ugarte
+37|MF|ENG|Kobbie Mainoo
+38|MF|ENG|Jack Fletcher|19|64
+39|MF|SCO|Tyler Fletcher|19|63
+9|FW|ENG|Marcus Rashford
+10|FW|BRA|Matheus Cunha
+11|FW|NED|Joshua Zirkzee
+16|FW|CIV|Amad Diallo
+19|FW|CMR|Bryan Mbeumo
+30|FW|SVN|Benjamin Šeško
+31|FW|ENG|Shea Lacey|19|65
+
+== Newcastle United
+1|GK|ENG|Nick Pope
+21|GK|CZE|Lukáš Horníček
+24|GK|FRA|Ewen Jaouen
+29|GK|ENG|Mark Gillespie
+2|DF|ENG|Tino Livramento
+3|DF|ENG|Lewis Hall
+4|DF|NED|Sven Botman
+5|DF|SUI|Fabian Schär
+12|DF|GER|Malick Thiaw
+33|DF|ENG|Dan Burn
+37|DF|BIH|Amar Dedić
+6|MF|ESP|Nico González
+7|MF|BRA|Joelinton
+8|MF|FRA|Aladji Bamba
+14|MF|NED|Sean Steur
+23|MF|ENG|Jacob Murphy
+28|MF|ENG|Joe Willock
+41|MF|ENG|Jacob Ramsey
+67|MF|ENG|Lewis Miley
+11|FW|ENG|Harvey Barnes
+17|FW|CIV|Bazoumana Touré
+19|FW|SWE|Anthony Elanga
+9|FW|COD|Yoane Wissa
+10|FW|DEN|William Osula
+20|FW|BEL|Matias Fernandez-Pardo
+
+== Nottingham Forest
+12|GK|BRA|John Victor
+26|GK|BEL|Matz Sels
+33|GK|GER|Steven Benda
+2|DF|CIV|Ousmane Diomande
+3|DF|WAL|Neco Williams
+5|DF|BRA|Murillo
+23|DF|BRA|Jair Cunha
+25|DF|GER|Luca Netz
+27|DF|COL|Daniel Muñoz
+31|DF|SRB|Nikola Milenković
+34|DF|NGA|Ola Aina
+37|DF|ITA|Nicolò Savona
+6|MF|CIV|Ibrahim Sangaré
+8|MF|ARG|Nicolás Domínguez
+10|MF|ENG|Morgan Gibbs-White
+21|MF|AUT|Xaver Schlager
+22|MF|ENG|Ryan Yates
+24|MF|ENG|James McAtee
+7|FW|ENG|Callum Hudson-Odoi
+9|FW|NZL|Chris Wood
+11|FW|BRA|Igor Jesus
+14|FW|SUI|Dan Ndoye
+15|FW|FRA|Arnaud Kalimuendo
+19|FW|ENG|Liam Delap
+
+== Sunderland
+21|GK|ENG|Simon Moore
+22|GK|NED|Robin Roefs
+31|GK|SWE|Melker Ellborg
+4|DF|AUT|Kevin Danso
+5|DF|NIR|Daniel Ballard
+6|DF|FRA|Dayann Methalie
+12|DF|BEL|Thomas Meunier
+15|DF|PAR|Omar Alderete
+17|DF|MOZ|Reinildo
+20|DF|FRA|Nordi Mukiele
+32|DF|NIR|Trai Hume
+42|DF|ENG|Aji Alese
+8|MF|IRL|Alan Browne
+11|MF|ENG|Chris Rigg
+13|MF|ENG|Luke O'Nien
+19|MF|SEN|Habib Diarra
+27|MF|COD|Noah Sadiki
+28|MF|FRA|Enzo Le Fée
+29|MF|COD|Jules Ahoka|19|62
+34|MF|SUI|Granit Xhaka
+46|MF|FRA|Abdoullah Ba
+7|FW|MAR|Chemsdine Talbi
+9|FW|NED|Brian Brobbey
+10|FW|ECU|Nilson Angulo
+14|FW|ENG|Romaine Mundle
+18|FW|HAI|Wilson Isidor
+37|FW|CIV|Jocelin Ta Bi|20|66
+39|FW|BEL|Malick Fofana
+50|FW|ECU|Juan Riquelme Angulo|19|63
+
+== Tottenham Hotspur
+31|GK|CZE|Antonín Kinský
+39|GK|SVK|Martin Dúbravka
+40|GK|USA|Brandon Austin
+3|DF|SCO|Andy Robertson
+4|DF|ENG|Tosin Adarabioyo
+5|DF|ARG|Marcos Senesi
+6|DF|NED|Jan Paul van Hecke
+2|DF|ROU|Radu Drăgușin
+13|DF|ITA|Destiny Udogie
+23|DF|ESP|Pedro Porro
+33|DF|WAL|Ben Davies
+37|DF|NED|Micky van de Ven
+7|MF|NED|Xavi Simons
+8|MF|ENG|Conor Gallagher
+10|MF|ENG|James Maddison
+14|MF|ENG|Archie Gray
+15|MF|SWE|Lucas Bergvall
+16|MF|ITA|Sandro Tonali
+18|MF|POR|Mateus Fernandes
+29|MF|SEN|Pape Matar Sarr
+30|MF|URU|Rodrigo Bentancur
+9|FW|BRA|Richarlison
+11|FW|FRA|Mathys Tel
+17|FW|BRA|Sávio
+19|FW|ENG|Dominic Solanke
+20|FW|GHA|Mohammed Kudus
+21|FW|SWE|Dejan Kulusevski
+22|FW|EGY|Omar Marmoush
+27|FW|UKR|Mykhailo Mudryk|25|74
+28|FW|FRA|Wilson Odobert

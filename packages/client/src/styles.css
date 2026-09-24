@@ -1,0 +1,117 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------- tokens (design doc section 14) */
+:root {
+  --bg-base: #0b0e11;
+  --bg-surface: #151a20;
+  --bg-raised: #1e252d;
+  --bg-input: #232b34;
+  --border-subtle: #2a333d;
+  --text-primary: #f2f5f7;
+  --text-secondary: #9aa7b4;
+  --text-tertiary: #64717e;
+  --accent: #4c9aff;
+  --accent-contrast: #0b0e11;
+  --positive: #3dd68c;
+  --warning: #f5a524;
+  --negative: #f0516d;
+  --info: #4c9aff;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --tabbar-h: 60px;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-base: var(--bg-base);
+  --color-surface: var(--bg-surface);
+  --color-raised: var(--bg-raised);
+  --color-input: var(--bg-input);
+  --color-subtle: var(--border-subtle);
+  --color-fg: var(--text-primary);
+  --color-fg2: var(--text-secondary);
+  --color-fg3: var(--text-tertiary);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--accent-contrast);
+  --color-positive: var(--positive);
+  --color-warning: var(--warning);
+  --color-negative: var(--negative);
+  --color-info: var(--info);
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Barlow Condensed", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --radius-card: 12px;
+  --radius-sheet: 20px;
+}
+
+@layer base {
+/* ---------------------------------------------------------------- base */
+html, body, #root { height: 100%; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 21px;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; }
+a { color: inherit; text-decoration: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+input[type="range"] { accent-color: var(--accent); }
+::selection { background: color-mix(in srgb, var(--accent) 40%, transparent); }
+
+}
+
+@layer components {
+/* ---------------------------------------------------------------- typography */
+.t-display { font-family: var(--font-display); font-size: 40px; line-height: 44px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
+.t-display-sm { font-family: var(--font-display); font-size: 30px; line-height: 34px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.t-title1 { font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em; }
+.t-title2 { font-size: 19px; line-height: 25px; font-weight: 600; }
+.t-body { font-size: 15px; line-height: 21px; font-weight: 400; }
+.t-strong { font-size: 15px; line-height: 21px; font-weight: 600; }
+.t-label { font-size: 13px; line-height: 17px; font-weight: 500; }
+.t-caption { font-size: 11px; line-height: 15px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+.t-num { font-size: 15px; line-height: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tabular { font-variant-numeric: tabular-nums; }
+.font-cond { font-family: var(--font-display); }
+
+/* ---------------------------------------------------------------- layout helpers */
+.app-column { max-width: 480px; margin: 0 auto; min-height: 100%; position: relative; background: var(--bg-base); }
+@media (min-width: 520px) {
+  body { background: #07090b; }
+  .app-column { box-shadow: 0 0 0 1px var(--border-subtle); }
+}
+.pt-safe { padding-top: var(--safe-top); }
+.pb-safe { padding-bottom: var(--safe-bottom); }
+.pb-tabbar { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 16px); }
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+}
+
+/* ---------------------------------------------------------------- motion */
+@keyframes pulse-border { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 55%, transparent); } 50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 35%, transparent); } }
+.pulse-warning { animation: pulse-border 1.8s ease-in-out infinite; }
+@keyframes skeleton { 0% { background-position: -200px 0; } 100% { background-position: 200px 0; } }
+.skeleton { background: linear-gradient(90deg, var(--bg-surface) 0px, var(--bg-raised) 80px, var(--bg-surface) 160px); background-size: 400px 100%; animation: skeleton 1.4s linear infinite; border-radius: 8px; }
+@keyframes sheet-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop-in { 0% { transform: scale(0.9); opacity: 0; } 60% { transform: scale(1.03); opacity: 1; } 100% { transform: scale(1); } }
+@keyframes toast-in { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes ring-pulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.6; } }
+.anim-sheet { animation: sheet-in 260ms cubic-bezier(.2,.8,.2,1); }
+.anim-fade { animation: fade-in 200ms ease-out; }
+.anim-pop { animation: pop-in 380ms cubic-bezier(.2,.8,.2,1); }
+.anim-toast { animation: toast-in 220ms ease-out; }
+.anim-ring { animation: ring-pulse 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .anim-sheet, .anim-fade, .anim-pop, .anim-toast, .pulse-warning, .anim-ring, .skeleton { animation: none !important; }
+}
+.reduce-motion * { animation: none !important; transition: none !important; }
