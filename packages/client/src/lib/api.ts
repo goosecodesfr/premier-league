@@ -35,7 +35,10 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   try {
     env = (await res.json()) as Envelope<T>;
   } catch {
-    throw new ApiError('INTERNAL', `The server replied with an error (${res.status}).`, res.status);
+    const html = (res.headers.get('content-type') ?? '').includes('text/html');
+    throw new ApiError('INTERNAL', html
+      ? `The game server did not answer (got a web page instead, status ${res.status}). The /api function may have failed to deploy - check the latest deployment's build and function logs in Vercel.`
+      : `The server replied with an error (${res.status}).`, res.status);
   }
   if (!env.ok) {
     if (env.error.code === 'UNAUTHENTICATED' && path !== '/auth/login') authEvents.dispatchEvent(new Event('logout'));

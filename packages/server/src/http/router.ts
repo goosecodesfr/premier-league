@@ -167,7 +167,9 @@ export async function dispatch(req: IncomingMessage, res: ServerResponse, hooks:
     } else {
       console.error('API error', method, path, e);
       const msg = e instanceof Error ? e.message : String(e);
-      send(500, { ok: false, error: { code: 'INTERNAL', message: process.env.NODE_ENV === 'production' ? 'Something went wrong on our side.' : msg } });
+      const setup = setupProblem(e);
+      if (setup) send(503, { ok: false, error: { code: 'INTERNAL', message: setup } });
+      else send(500, { ok: false, error: { code: 'INTERNAL', message: process.env.NODE_ENV === 'production' ? 'Something went wrong on our side.' : msg } });
     }
   }
   if (afterFns.length) {
@@ -179,4 +181,20 @@ export async function dispatch(req: IncomingMessage, res: ServerResponse, hooks:
     if (hooks.waitUntil) hooks.waitUntil(p);
     else await p;
   }
+}
+
+/** Hosting/database configuration problems get a plain explanation, even in production. */
+export function setupProblem(e: unknown): string | null {
+  const err = e as { message?: string; code?: string } | null;
+  const m = String(err?.message ?? e ?? '');
+  const code = String(err?.code ?? '');
+  const hint = 'Check DATABASE_URL in Vercel (Settings → Environment Variables), use Supabase\'s "Transaction pooler" string (port 6543), then redeploy.';
+  if (/DATABASE_URL is not set/.test(m)) return m + ' Then redeploy.';
+  if (code === 'ERR_INVALID_URL' || /Invalid URL/i.test(m)) return `DATABASE_URL is not a valid connection string. If your database password contains symbols, reset it to letters and digits only. ${hint}`;
+  if (code === '28P01' || /password authentication failed/i.test(m)) return `The database rejected the password in DATABASE_URL. Make sure you replaced [YOUR-PASSWORD] (including the brackets) with your real database password. ${hint}`;
+  if (/Tenant or user not found/i.test(m)) return `Supabase did not recognise the user in DATABASE_URL (it should look like postgres.abcdefghijkl). Copy the string again from Connect → Transaction pooler. ${hint}`;
+  if (['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ETIMEDOUT', 'ENETUNREACH', 'EHOSTUNREACH', 'ECONNRESET'].includes(code) || /timeout exceeded when trying to connect|Connection terminated|connect ETIMEDOUT/i.test(m)) {
+    return `Cannot connect to the database (${code || m.slice(0, 80)}). If you copied the "Direct connection" string, it will not work from Vercel. ${hint}`;
+  }
+  return null;
 }

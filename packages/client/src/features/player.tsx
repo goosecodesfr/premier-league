@@ -14,6 +14,7 @@ import { useDebouncedCallback } from '../lib/hooks';
 import { Badge, Button, Card, Chip, ChipRow, IconButton, List, ListRow, Meter, Q, Screen, Section, Segmented, Sheet, SkeletonCards, StatBlock, cx, inputCls, useConfirm, useToast } from '../components/ui';
 import { ClubCrest, Flag, PlayerAvatar, PlayerRow, PosBadge, RatingPill } from '../components/domain';
 import { Radar, RatingLine } from '../components/charts';
+import { Per90, PositionMap, ProfileCard, RoleTable, TraitChips } from './player-parts';
 import { useMe } from '../app/session';
 
 const GROUP_LABEL: Record<string, string> = { technical: 'Technical', goalkeeping: 'Goalkeeping', mental: 'Mental', physical: 'Physical' };
@@ -67,6 +68,7 @@ function BidForm({ d, onDone }: { d: QuoteData; onDone: () => void }) {
   const [wageMult, setWageMult] = useState(1.05);
   const [years, setYears] = useState(d.player.age >= 31 ? 2 : d.player.age >= 28 ? 3 : 4);
   const [promise, setPromise] = useState<'none' | 'key' | 'rotation' | 'backup'>('none');
+  const [approach, setApproach] = useState<'private' | 'public'>('private');
   const fee = d.isFree ? 0 : Math.round((d.value * feeMult) / 100_000) * 100_000;
   const wg = Math.round((d.demand * wageMult) / 500) * 500;
   const feeP = d.isFree ? 1 : d.sellerHuman ? null : interp(d.feeCurve.map((c) => ({ x: c.fee, p: c.p })), fee);
@@ -77,7 +79,7 @@ function BidForm({ d, onDone }: { d: QuoteData; onDone: () => void }) {
   const wageAfter = d.wageBill + wg;
   const overWages = wageAfter > d.wageBudget;
   const bid = useMutation({
-    mutationFn: () => api.post<{ bidId: number; respondAt: string | null }>('/transfers/bid', { playerId: d.player.id, fee, wage: wg, years, promise: promise === 'none' ? null : promise }),
+    mutationFn: () => api.post<{ bidId: number; respondAt: string | null }>('/transfers/bid', { playerId: d.player.id, fee, wage: wg, years, promise: promise === 'none' ? null : promise, private: !d.isFree && approach === 'private' }),
     onSuccess: (r) => {
       qc.invalidateQueries();
       toast(d.isFree ? 'Offer sent. His agent will reply soon.' : d.sellerHuman ? 'Bid sent to their manager.' : 'Bid sent. Expect a reply within a couple of hours.', 'success');
@@ -131,6 +133,16 @@ function BidForm({ d, onDone }: { d: QuoteData; onDone: () => void }) {
         <Segmented value={promise} onChange={setPromise} options={[{ value: 'none', label: 'None' }, { value: 'key', label: 'Key player' }, { value: 'rotation', label: 'Rotation' }, { value: 'backup', label: 'Backup' }]} />
         {promise !== 'none' && <div className="t-label text-fg3 mt-1.5">Break a promise of minutes and he will want to leave.</div>}
       </Section>
+      {!d.isFree && (
+        <Section title="Approach">
+          <Segmented value={approach} onChange={setApproach} options={[{ value: 'private', label: 'In private' }, { value: 'public', label: 'In public' }]} />
+          <div className="t-label text-fg2 mt-2">
+            {approach === 'private'
+              ? <>Only {d.club?.short ?? 'the club'} will know. There is still about a <b className="text-warning">{d.leakChance}% chance</b> the story leaks to the media. If it does, the player may be unsettled, {d.club?.short ?? 'the seller'} may raise their price, and rivals may join the race.</>
+              : <>Everyone sees the bid on the transfer feed and in the news.{d.unsettleRisk ? ' As the bigger club, your interest may unsettle him and push him towards a move.' : ''}</>}
+          </div>
+        </Section>
+      )}
       <Section title="Affordability">
         <Card className={cx(overBudget || overWages ? '!border-negative' : '')}>
           <div className="grid grid-cols-2 gap-3">
@@ -264,6 +276,8 @@ export function PlayerProfile() {
               {d.offers.length > 0 && (
                 <Section title="Offers for him"><List>{d.offers.map((o) => <ListRow key={o.id} title={`${o.buyer} bid ${money(o.fee)}`} subtitle={o.status} to="/transfers/offers" />)}</List></Section>
               )}
+              <Section title="Signature traits"><Card><TraitChips traits={d.traits} /></Card></Section>
+              <Section title="Profile"><ProfileCard profile={d.profile} /></Section>
               {/* radar */}
               <Section title="Attributes" action={<button className="t-label text-accent" onClick={() => setExpanded(!expanded)}>{expanded ? 'Show radar' : 'All attributes'}</button>}>
                 <Card>
@@ -284,17 +298,8 @@ export function PlayerProfile() {
                   )}
                 </Card>
               </Section>
-              <Section title="Best roles">
-                <List>
-                  {d.roles.map((r) => (
-                    <div key={r.role} className="flex items-center gap-3 px-4 h-12">
-                      <PosBadge pos={r.pos} />
-                      <span className="flex-1 t-body">{r.name} <span className="text-fg3">({r.duty === 'D' ? 'Defend' : r.duty === 'S' ? 'Support' : 'Attack'})</span></span>
-                      <span className="font-cond font-bold text-[20px] tabular">{r.rating.toFixed(1)}</span>
-                    </div>
-                  ))}
-                </List>
-              </Section>
+              <Section title="Where he plays best"><PositionMap positions={d.positions} /></Section>
+              <Section title="Role ratings"><RoleTable rows={d.roleTable} /></Section>
               <Section title="This season">
                 <ChipRow className="mb-2">
                   <Chip selected={comp === 'all'} onClick={() => setComp('all')}>All</Chip>
@@ -315,6 +320,7 @@ export function PlayerProfile() {
                   ) : <div className="t-body text-fg2">No appearances yet.</div>}
                 </Card>
               </Section>
+              <Per90 per90={d.per90} />
               <Section title="Form">
                 <Card><RatingLine points={d.form.map((f) => ({ rating: f.rating, result: f.result, opp: f.opp }))} /></Card>
               </Section>

@@ -6,7 +6,7 @@ import { ApiError } from '../http/router.ts';
 import { HOUR, MINUTE } from '../lib/time.ts';
 import { addLedger, wageBudgetWeekly } from './finance.ts';
 import { addNews } from './news.ts';
-import { notifyClub } from './notify.ts';
+import { broadcast, notifyClub } from './notify.ts';
 import { attrsOf, hiddenOf, isGoalkeeper, mainPosition, loadPlayers, valueOf, lineOf } from './players.ts';
 import type { ClubRow, PlayerRow, WorldRow, Archetype } from './types.ts';
 
@@ -15,6 +15,12 @@ export interface BidRow {
   promise: 'key' | 'rotation' | 'backup' | null; status: string; counter_fee: number | null;
   thread: { by: 'buyer' | 'seller' | 'player' | 'system'; text: string; fee?: number; at: string }[];
   created_at: Date; updated_at: Date; respond_at: Date | null; expires_at: Date;
+  private: boolean; leak_at: Date | null; leaked: boolean;
+}
+
+/** Chance that a private approach reaches the press: 30% for small deals up to 40% for big ones. */
+export function leakChance(fee: number): number {
+  return 0.3 + 0.1 * Math.min(1, fee / 60_000_000);
 }
 
 export const MAX_SQUAD = 32;
@@ -35,6 +41,14 @@ export function squadRank(p: PlayerRow, squad: PlayerRow[]): number {
 export function sellerTerms(p: PlayerRow, seller: ClubRow | null, squad: PlayerRow[], world: WorldRow): { min: number; stance: Stance } {
   if (!seller) return { min: 0, stance: 'selling' };
   const value = p.value || valueOf(p, world.season_no);
+  if (seller.league === 'WORLD') {
+    // Rest-of-world clubs are selling clubs, but their best prospects do not come cheap.
+    if (p.flags?.newSigning === world.season_no) return { min: roundMoney(value * 2.2), stance: 'untouchable' };
+    const elite = p.pa >= 180;
+    let m = elite ? 1.55 : p.pa >= 170 ? 1.35 : 1.2;
+    if (p.contract_until - world.season_no <= 0) m *= 0.8;
+    return { min: roundMoney(value * m), stance: elite ? 'reluctant' : 'consider' };
+  }
   const rank = squadRank(p, squad);
   let m = 1.15;
   let stance: Stance = 'consider';
@@ -52,6 +66,7 @@ export function sellerTerms(p: PlayerRow, seller: ClubRow | null, squad: PlayerR
   if (a === 'chequebook') m *= 1.1;
   if (a === 'pragmatist') m = Math.max(m, 1.0);
   if (seller.league !== 'PL') m *= 0.92; // pool clubs sell to the rich league
+  if (p.flags?.leakPremium === world.season_no) m *= 1.12; // embarrassed by a leak, they dig in
   if (p.flags?.askingPrice && seller.manager_type === 'human') return { min: p.flags.askingPrice, stance };
   return { min: roundMoney(value * m), stance };
 }
@@ -86,7 +101,7 @@ export async function squadSize(d: Db, clubId: number): Promise<number> {
   return r?.n ?? 0;
 }
 
-export async function placeBid(d: Db, world: WorldRow, buyer: ClubRow, playerId: number, opts: { fee: number; wage: number; years: number; promise?: BidRow['promise']; by: 'user' | 'bot'; now?: Date }): Promise<BidRow> {
+export async function placeBid(d: Db, world: WorldRow, buyer: ClubRow, playerId: number, opts: { fee: number; wage: number; years: number; promise?: BidRow['promise']; by: 'user' | 'bot'; now?: Date; private?: boolean }): Promise<BidRow> {
   const now = opts.now ?? new Date();
   const [p] = await loadPlayers(d, 'id = $1', [playerId]);
   if (!p || (p.status !== 'active' && p.status !== 'free')) throw new ApiError('NOT_FOUND', 'That player is not available.');
@@ -106,12 +121,24 @@ export async function placeBid(d: Db, world: WorldRow, buyer: ClubRow, playerId:
   const rng = new Rng(`${world.secret}:bid:${playerId}:${buyer.id}:${now.getTime()}`);
   const respondAt = sellerHuman ? null : new Date(now.getTime() + (isFree ? 20 : rng.int(15, 150)) * MINUTE);
   const expires = new Date(now.getTime() + 48 * HOUR);
-  const text = isFree ? `Contract offer: £${fmtK(wage)}/wk for ${years} years.` : `Bid of £${fmtM(fee)}, wages £${fmtK(wage)}/wk over ${years} years.`;
+  const isPrivate = !!opts.private && !isFree;
+  const text = isFree ? `Contract offer: £${fmtK(wage)}/wk for ${years} years.` : `${isPrivate ? 'Private approach' : 'Bid'}: £${fmtM(fee)}, wages £${fmtK(wage)}/wk over ${years} years.`;
+  // A private approach may still reach the press: decide now, reveal later.
+  const leakAt = isPrivate && rng.chance(leakChance(fee)) ? new Date(now.getTime() + rng.int(60, 30 * 60) * MINUTE) : null;
   const bid = await d.one<BidRow>(
-    `insert into bids (player_id, from_club, to_club, fee, wage, years, promise, status, thread, respond_at, expires_at)
-     values ($1,$2,$3,$4,$5,$6,$7,'pending',$8,$9,$10) returning *`,
-    [playerId, buyer.id, p.club_id, fee, wage, years, opts.promise ?? null, JSON.stringify([{ by: 'buyer', text, fee, at: now.toISOString() }]), respondAt, expires],
+    `insert into bids (player_id, from_club, to_club, fee, wage, years, promise, status, thread, respond_at, expires_at, private, leak_at)
+     values ($1,$2,$3,$4,$5,$6,$7,'pending',$8,$9,$10,$11,$12) returning *`,
+    [playerId, buyer.id, p.club_id, fee, wage, years, opts.promise ?? null, JSON.stringify([{ by: 'buyer', text, fee, at: now.toISOString() }]), respondAt, expires, isPrivate, leakAt],
   );
+  // Public bids are news straight away, and a bigger club's interest turns heads.
+  if (!isPrivate && !isFree && seller && fee >= 5_000_000) {
+    await addNews(d, world, {
+      type: 'rumour', clubIds: [buyer.id, seller.id], importance: fee >= 40_000_000 ? 2 : 1,
+      headline: `${buyer.short} make £${fmtM(fee)} bid for ${seller.short}'s ${p.name}`,
+      body: `The offer is on the table. ${seller.short} are ${sellerHuman ? 'considering their response' : 'expected to respond soon'}.`,
+    });
+    await unsettle(d, world, p, buyer, seller, 0.5, now);
+  }
   if (sellerHuman && seller) {
     await notifyClub(d, seller.id, { type: 'bid', title: `Bid received: £${fmtM(fee)} for ${p.name}`, body: `${buyer.short} want ${p.short}. Respond within 48 hours.`, link: '/transfers/offers' });
   }
@@ -119,6 +146,7 @@ export async function placeBid(d: Db, world: WorldRow, buyer: ClubRow, playerId:
 }
 
 export async function processBids(d: Db, world: WorldRow, now: Date) {
+  await processLeaks(d, world, now);
   // Expire stale bids
   const stale = await d.many<BidRow>(`select * from bids where status in ('pending','countered') and expires_at <= $1`, [now]);
   for (const b of stale) {
@@ -173,7 +201,7 @@ async function resolveAutomated(d: Db, world: WorldRow, b: BidRow, now: Date) {
   const squad = await loadPlayers(d, `club_id = $1 and status = 'active'`, [seller.id]);
   const { min } = sellerTerms(p, seller, squad, world);
   const threshold = min * (0.96 + rng.next() * 0.08);
-  if (squad.length <= MIN_SQUAD + 1 && !p.flags?.listed) {
+  if (seller.league !== 'WORLD' && squad.length <= MIN_SQUAD + 1 && !p.flags?.listed) {
     thread.push({ by: 'seller', text: 'We cannot let anyone else leave right now.', at: now.toISOString() });
     await d.q(`update bids set status = 'rejected', thread = $2, updated_at = $3 where id = $1`, [b.id, JSON.stringify(thread), now]);
   } else if (b.fee >= threshold) {
@@ -199,7 +227,7 @@ async function resolveAutomated(d: Db, world: WorldRow, b: BidRow, now: Date) {
 }
 
 async function publicBidNews(d: Db, world: WorldRow, b: BidRow, p: PlayerRow, buyer: ClubRow, seller: ClubRow, rng: Rng) {
-  if (b.fee < 15_000_000 || !rng.chance(0.5)) return;
+  if ((b.private && !b.leaked) || b.fee < 15_000_000 || !rng.chance(0.5)) return;
   const status = (await d.one<{ status: string }>('select status from bids where id = $1', [b.id]))?.status;
   const verb = status === 'rejected' ? 'have a' : status === 'countered' ? 'see a' : 'make a';
   await addNews(d, world, { type: 'rumour', clubIds: [buyer.id, seller.id], headline: `${buyer.short} ${verb} £${fmtM(b.fee)} bid for ${p.name}${status === 'rejected' ? ' rejected' : status === 'countered' ? ' countered' : ''}`, body: `${seller.short} ${status === 'rejected' ? 'turned it down' : status === 'countered' ? 'want more' : 'are considering it'}.`, importance: 1 });
@@ -378,6 +406,86 @@ export function renewalLikelihood(p: PlayerRow, club: ClubRow, wage: number, yea
   return { p: contractAcceptance(wage, demand, years, { age: p.age, loyalty: h.loyalty, clubRep: club.reputation, playerRep: playerReputation(p.ca) }) * (p.flags?.wantsOut ? 0.4 : 1), demand };
 }
 
+// ---------------------------------------------------------------- media: leaks and unsettled players
+/**
+ * A bigger club's interest turns a player's head. `strength` 0..1 scales the effect (a leak hits harder
+ * than an open bid because it feels like talks behind the club's back).
+ */
+async function unsettle(d: Db, world: WorldRow, p: PlayerRow, buyer: ClubRow, seller: ClubRow, strength: number, now: Date) {
+  const gap = buyer.reputation - seller.reputation;
+  if (gap < 3 || seller.league === 'WORLD') return;
+  const h = hiddenOf(p);
+  const flags: Record<string, unknown> = { ...(p.flags ?? {}), unsettled: world.season_no };
+  await d.q('update players set morale = greatest(0.9, morale - $2), flags = $3 where id = $1', [p.id, 0.02 + 0.03 * strength, JSON.stringify(flags)]);
+  const rng = new Rng(`${world.secret}:unsettle:${p.id}:${now.toISOString().slice(0, 13)}`);
+  const pRequest = strength * (h.ambition >= 15 ? 0.55 : h.ambition >= 12 ? 0.3 : 0.1) * Math.min(1, gap / 15) * (h.loyalty >= 16 ? 0.4 : 1);
+  if (!p.flags?.wantsOut && rng.chance(pRequest)) {
+    await d.q(`update players set flags = flags || '{"wantsOut": true}'::jsonb where id = $1`, [p.id]);
+    await addNews(d, world, { type: 'rumour', clubIds: [seller.id, buyer.id], importance: 2, headline: `${p.name} hands in a transfer request`, body: `The ${seller.short} ${p.age}-year-old wants to talk to ${buyer.short}.` });
+    if (seller.manager_type === 'human') await notifyClub(d, seller.id, { type: 'bid', title: `${p.name} wants to leave`, body: `${buyer.short}'s interest has turned his head. He has asked to go.`, link: `/player/${p.id}` });
+  } else if (seller.manager_type === 'human') {
+    await notifyClub(d, seller.id, { type: 'bid', title: `${p.name} is unsettled`, body: `${buyer.short}'s interest is on his mind. His morale has dipped.`, link: `/player/${p.id}` });
+  }
+}
+
+/** Private approaches that reach the press. */
+export async function processLeaks(d: Db, world: WorldRow, now: Date) {
+  const due = await d.many<BidRow>(`select * from bids where private and not leaked and leak_at is not null and leak_at <= $1 order by leak_at limit 20`, [now]);
+  for (const b of due) {
+    await d.q('update bids set leaked = true where id = $1', [b.id]);
+    const [p] = await loadPlayers(d, 'id = $1', [b.player_id]);
+    const buyer = await loadClub(d, b.from_club);
+    const seller = await loadClub(d, b.to_club);
+    if (!p || !buyer || !seller) continue;
+    const live = ['pending', 'countered'].includes(b.status) && p.club_id === seller.id;
+    const done = b.status === 'completed';
+    if (done) continue; // the deal is public anyway
+    const rng = new Rng(`${world.secret}:leak:${b.id}`);
+    const outlet = rng.pick(['The Athletic', 'Sky Sports News', 'The Telegraph', 'Fabrizio Romano', 'BBC Sport', 'The Guardian', 'ESPN']);
+    const headline = live
+      ? `EXCLUSIVE: ${buyer.short} in secret talks to sign ${p.name}`
+      : `REVEALED: ${buyer.short} tried to sign ${p.name} behind the scenes`;
+    const body = live
+      ? `${outlet} reports a private offer of around £${fmtM(b.fee)} to ${seller.short}. Neither club has commented.`
+      : `${outlet} reports that ${buyer.short} made a private approach worth around £${fmtM(b.fee)}, which went nowhere.`;
+    await addNews(d, world, { type: 'rumour', clubIds: [buyer.id, seller.id], importance: b.fee >= 30_000_000 ? 3 : 2, headline, body, payload: { leak: true, bidId: b.id } });
+    await broadcast(d, { type: 'news', title: live ? `Leak: ${buyer.short} want ${p.name}` : `Leak: ${buyer.short} tried for ${p.name}`, body: `${outlet}: private offer of about £${fmtM(b.fee)}.`, link: '/media' });
+    if (buyer.manager_type === 'human') await notifyClub(d, buyer.id, { type: 'bid', title: 'Your private bid has leaked', body: `${outlet} has the story about ${p.name}. ${live ? `${seller.short} will not be pleased.` : ''}`, link: `/transfers/negotiate/${b.id}` });
+    if (!live) { await unsettle(d, world, p, buyer, seller, 0.4, now); continue; }
+    // Consequences of a live leak
+    await unsettle(d, world, p, buyer, seller, 1, now);
+    if (seller.manager_type !== 'human' || seller.meta?.botTakeover) {
+      // A seller embarrassed in public digs in: the price goes up for this window.
+      await d.q(`update players set flags = flags || $2::jsonb where id = $1`, [p.id, JSON.stringify({ leakPremium: world.season_no })]);
+      const thread = b.thread ?? [];
+      thread.push({ by: 'system', text: `The story leaked to ${outlet}. ${seller.short} have hardened their stance.`, at: now.toISOString() });
+      await d.q('update bids set thread = $2 where id = $1', [b.id, JSON.stringify(thread)]);
+    }
+    // Rivals smell a deal: a bot club with the need and the money may gatecrash.
+    if (windowOpen(world) && rng.chance(0.4)) await rivalBid(d, world, p, buyer, seller, b.fee, rng, now);
+  }
+}
+
+async function rivalBid(d: Db, world: WorldRow, p: PlayerRow, buyer: ClubRow, seller: ClubRow, fee: number, rng: Rng, now: Date) {
+  const pos = mainPosition(p);
+  const clubs = await d.many<ClubRow>(`select * from clubs where league = 'PL' and manager_type = 'bot' and id <> all($1) and reputation >= $2 order by random() limit 12`, [[buyer.id, seller.id], seller.reputation - 10]);
+  for (const c of clubs) {
+    if (transferBudget(c) < fee * 1.1) continue;
+    const squad = await loadPlayers(d, `club_id = $1 and status = 'active'`, [c.id]);
+    const need = assessNeeds(squad, squad.map((x) => x.ca).sort((a, b) => b - a).slice(0, 13).reduce((s, v, _, arr) => s + v / arr.length, 0)).find((n) => n.pos === pos);
+    if (!need || need.urgency < 2 && rng.chance(0.6)) continue;
+    const offer = roundMoney(fee * (1.05 + rng.next() * 0.12));
+    const demand = wageDemand({ ca: p.ca, age: p.age, ambition: hiddenOf(p).ambition, currentWage: p.wage }, c.reputation);
+    try {
+      await placeBid(d, world, c, p.id, { fee: offer, wage: Math.round(demand * 1.08), years: p.age >= 29 ? 2 : 4, by: 'bot', now });
+      if (buyer.manager_type === 'human') await notifyClub(d, buyer.id, { type: 'bid', title: `${c.short} gatecrash the ${p.name} deal`, body: `They have bid £${fmtM(offer)} after the leak.`, link: `/player/${p.id}` });
+      return;
+    } catch {
+      // not allowed right now; try the next club
+    }
+  }
+}
+
 // ---------------------------------------------------------------- bot market
 export function transferBudget(c: ClubRow): number {
   const spend = { chequebook: 0.85, gegenpresser: 0.6, purist: 0.65, pragmatist: 0.5, counter: 0.5, cynic: 0.35, youth: 0.45, tinkerman: 0.6 }[c.bot?.archetype ?? 'pragmatist'];
@@ -422,7 +530,7 @@ export function assessNeeds(squad: PlayerRow[], clubLevel: number): Need[] {
 
 export async function botMarketDay(d: Db, world: WorldRow, now: Date, intensity = 1) {
   const rng = new Rng(`${world.secret}:market:${now.toISOString().slice(0, 13)}`);
-  const clubs = await d.many<ClubRow>(`select * from clubs where manager_type = 'bot' or (meta->>'botTakeover')::boolean is true`);
+  const clubs = await d.many<ClubRow>(`select * from clubs where league <> 'WORLD' and (manager_type = 'bot' or (meta->>'botTakeover')::boolean is true)`);
   const open = windowOpen(world);
   let bids = 0;
   for (const c of rng.shuffle(clubs)) {
@@ -465,7 +573,7 @@ export async function botMarketDay(d: Db, world: WorldRow, now: Date, intensity 
     if (bill + demand > wb * 1.15 && c.bot.archetype !== 'chequebook') continue;
     const years = target.age >= 30 ? 2 : target.age >= 27 ? 3 : 4;
     try {
-      await placeBid(d, world, c, target.id, { fee, wage: Math.round(demand * (1 + rng.next() * 0.12)), years, by: 'bot', now });
+      await placeBid(d, world, c, target.id, { fee, wage: Math.round(demand * (1 + rng.next() * 0.12)), years, by: 'bot', now, private: rng.chance(0.55) });
       bids++;
     } catch {
       // validation failures are normal market noise

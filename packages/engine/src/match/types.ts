@@ -2,6 +2,7 @@
 import type { Attributes, Hidden } from '../attributes.ts';
 import type { Familiarity } from '../positions.ts';
 import type { OppInstruction, Tactic } from '../tactics.ts';
+import type { TraitKey, Traits } from '../traits.ts';
 
 export interface MatchPlayerInput {
   id: number;
@@ -17,6 +18,8 @@ export interface MatchPlayerInput {
   form: number; // 0.85..1.15
   morale: number; // 0.90..1.10
   fatigueDebt: number; // 0..100
+  /** Signature traits (PlayStyles), 1 = normal, 2 = elite. */
+  traits?: Traits;
 }
 
 export interface TeamInput {
@@ -79,6 +82,7 @@ export interface MatchEvent {
   txt: string; // rendered commentary
   k?: string; // commentary key
   st?: 'et' | 'pens'; // phase marker
+  tr?: TraitKey; // signature trait that shaped this moment
   /** 'snap' events: [homePossession, then per side: shots, onTarget, xg, corners, fouls, yellows, reds, passesCompleted, passes] */
   d?: number[];
 }
@@ -171,6 +175,14 @@ export interface PlayerMatchStat {
   penaltiesScored: number;
   penaltiesMissed: number;
   ownGoals: number;
+  /** Signature traits that decided moments: trait -> count of decisive uses (goals, assists, key actions). */
+  traitMoments: Partial<Record<TraitKey, number>>;
+  /** Positional familiarity in the position he played (0..1). */
+  fam: number;
+  /** Times he closed down the man on the ball. */
+  pressures: number;
+  /** Passes and carries into the final third. */
+  progressive: number;
 }
 
 export type InjurySeverity = 'knock' | 'minor' | 'moderate' | 'serious';
@@ -214,6 +226,23 @@ export interface TriggerFired {
   desc: string;
 }
 
+/** Measured effects of each side's tactical decisions, for the post-match decision report. */
+export interface DecisionReport {
+  pressWinsHigh: number; // ball won in the opponent's half by pressing or tackles
+  ppda: number; // opposition passes allowed per defensive action in their own 60%
+  throughConceded: number; // through balls behind the line faced
+  throughCompleted: number;
+  offsidesWon: number;
+  flank: [number, number, number]; // share of final-third entries by channel
+  counters: number;
+  countersShots: number;
+  crossesShots: number;
+  longShots: number;
+  setPieceXg: number;
+  outOfPosition: { playerId: number; pos: string; fam: number; duelsLost: number; rating: number; passes?: number; passesCompleted?: number }[];
+  instructionUse: { playerId: number; key: string; value: string; count: number; stat: string }[];
+}
+
 export interface MatchResult {
   score: [number, number];
   htScore: [number, number];
@@ -233,4 +262,5 @@ export interface MatchResult {
   verdict: string;
   summaryWord: [string, string]; // three-word-ish summary per side
   minutesPlayed: number;
+  decisions: [DecisionReport, DecisionReport];
 }

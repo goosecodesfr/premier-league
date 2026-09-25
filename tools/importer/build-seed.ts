@@ -8,7 +8,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   Rng, attributesFromDataset, attrsToArray, hiddenToArray, deriveFamiliarity, currentAbility,
-  generatePlayer, type DatasetRow, type Pos, DATASET_ABILITY_SLOPE, type NamePool,
+  generatePlayer, type DatasetRow, type Pos, DATASET_ABILITY_SLOPE, type NamePool, parseDatasetTraits, deriveTraits, attrsFromArray,
+  type Traits,
 } from '@ffm/engine';
 import { NATION_BY_NAME, CODE_ALIASES, NATIONS } from '@ffm/shared';
 import { parseCsv } from './csv.ts';
@@ -20,6 +21,8 @@ const SEASON_START_YEAR = 2026;
 const REF_DATE = new Date('2026-09-01T00:00:00Z');
 const EUR_TO_GBP = 0.86;
 const rng = new Rng('ffm-seed-2026-27-v1');
+// Separate stream for additions made after v1, so existing players keep identical attributes.
+const rng2 = new Rng('ffm-seed-2026-27-v2');
 
 // ---------------------------------------------------------------- helpers
 const FC_POS: Record<string, Pos> = {
@@ -145,6 +148,10 @@ interface SeedPlayer {
   sid: number; club: string | null; name: string; short: string; first: string; last: string;
   nat: string; age: number; foot: 'L' | 'R' | 'B'; h: number; pos: Record<string, number>;
   a: number[]; hd: number[]; ca: number; pa: number; wage: number; cy: number; no: number | null; fc?: number;
+  /** Signature traits. */
+  tr?: Traits;
+  /** Rest-of-world prospect (added in seed v2). */
+  wk?: 1;
 }
 const players: SeedPlayer[] = [];
 let sid = 1;
@@ -178,7 +185,13 @@ function fromRow(r: Row, clubKey: string | null, meta: ClubMeta | null, opts: { 
     sid: sid++, club: clubKey, name, short, first: dn.first, last: dn.last, nat: r.nat, age: r.age, foot,
     h: num(r.raw.height_cm) || 180, pos: fam as Record<string, number>, a: attrsToArray(attrs), hd: hiddenToArray(hidden),
     ca, pa, wage: Math.max(1000, wage), cy, no: opts.number ?? (Number.isFinite(jersey) ? jersey : null), fc: r.overall,
+    tr: datasetTraits(r, attrs, fam, ca),
   };
+}
+
+/** Real PlayStyles from the dataset (most squad players have none, as in the source data). */
+function datasetTraits(r: Row, _attrs: unknown, _fam: unknown, _ca: number): Traits {
+  return parseDatasetTraits(r.raw.player_traits);
 }
 
 // ---------------------------------------------------------------- PL squads
@@ -312,6 +325,7 @@ function genPlaceholder(e: SquadEntry, meta: ClubMeta): SeedPlayer {
     sid: sid++, club: meta.key, name: e.name, short: toks.length > 1 ? toks.slice(1).join(' ') : e.name, first: toks[0], last: toks[toks.length - 1],
     nat: e.nat, age, foot: g.foot, h: g.heightCm, pos: g.familiarity as Record<string, number>, a: attrsToArray(g.attrs),
     hd: hiddenToArray(g.hidden), ca: g.ca, pa: g.pa, wage: wageModel(g.ca, meta.reputation), cy: rng.int(2, 4), no: e.no,
+    tr: deriveTraits(attrsFromArray(attrsToArray(g.attrs)), g.familiarity, g.ca, rng2),
   };
 }
 
@@ -355,6 +369,154 @@ picked.forEach((r, i) => {
   players.push(p);
 });
 
+// ---------------------------------------------------------------- v2: young talents and rest-of-world clubs
+// Appended after every v1 player so existing worlds can be upgraded in place (see server/src/game/upgrade.ts).
+interface WorldClubOut {
+  key: string; name: string; short: string; league: 'WORLD'; country: string; colors: [string, string]; stadium: string; capacity: number;
+  reputation: number; archetype: string; rivals: string[]; lastPos: null; europe: null;
+}
+const V2_FIRST_SID = sid;
+const worldClubs = new Map<string, WorldClubOut>(); // dataset club name -> club
+const usedKeys = new Set(CLUBS.map((c) => c.key));
+const clubByDataset = new Map(CLUBS.map((c) => [c.dataset, c]));
+const clubByName = new Map(CLUBS.flatMap((c) => [[norm(c.name), c], [norm(c.short), c], [norm(c.dataset), c]] as [string, ClubMeta][]));
+const squadCount = new Map<string, number>();
+for (const p of players) if (p.club && p.club !== 'RES') squadCount.set(p.club, (squadCount.get(p.club) ?? 0) + 1);
+const PALETTE: [string, string][] = [['#1D3C8F', '#FFFFFF'], ['#B01E23', '#FFFFFF'], ['#111111', '#F2C200'], ['#0B7A3E', '#FFFFFF'], ['#5B2A86', '#FFFFFF'], ['#E35205', '#111111'], ['#0E6BA8', '#F4D35E'], ['#7A0019', '#F1C400'], ['#FFFFFF', '#1D3C8F'], ['#00843D', '#FDB913']];
+const hash = (s: string) => [...s].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
+
+function worldClubFor(datasetClub: string, rowsForClub: Row[], natHint?: string): WorldClubOut {
+  const hit = worldClubs.get(datasetClub);
+  if (hit) return hit;
+  const words = datasetClub.replace(/[^A-Za-zÀ-ÿ ]/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !['FC', 'CF', 'AC', 'SC', 'Club', 'Clube', 'Atlético', 'Real', 'Sporting', 'the'].includes(w));
+  const base = norm(words.join(' ') || datasetClub).replace(/ /g, '').toUpperCase();
+  let key = (base.slice(0, 3) || 'WLD').padEnd(3, 'X');
+  for (let i = 1; usedKeys.has(key); i++) key = (base.slice(0, 2) + String(i)).slice(0, 4);
+  usedKeys.add(key);
+  const natCount = new Map<string, number>();
+  const clubRows = rows.filter((r) => r.club === datasetClub);
+  for (const r of clubRows) natCount.set(r.nat, (natCount.get(r.nat) ?? 0) + 1);
+  const country = [...natCount].sort((a, b) => b[1] - a[1])[0]?.[0] ?? natHint ?? rowsForClub[0]?.nat ?? 'ENG';
+  const top = clubRows.map((r) => r.overall).sort((a, b) => b - a).slice(0, 16);
+  const avg = top.length >= 8 ? top.reduce((x, y) => x + y, 0) / top.length : 69;
+  const reputation = Math.round(Math.max(40, Math.min(82, 30 + (avg - 60) * 2.2)));
+  const short = datasetClub.replace(/^(FC|AC|SC|CF|AS|SL|SK|RC|RSC|KRC|SV|VfB|VfL|TSG|1\. FC|FK|NK|CA|CD|Club Atlético|Club) /, '').replace(/ (FC|CF|SC|AC)$/, '');
+  let shortName = short.length > 18 ? short.split(' ')[0] : short;
+  if (CLUBS.some((m) => norm(m.short) === norm(shortName) || norm(m.name) === norm(shortName))) shortName = datasetClub;
+  const c: WorldClubOut = {
+    key, name: datasetClub, short: shortName, league: 'WORLD', country, colors: PALETTE[hash(datasetClub) % PALETTE.length],
+    stadium: `${short} Stadium`, capacity: 20000, reputation, archetype: 'youth', rivals: [], lastPos: null, europe: null,
+  };
+  worldClubs.set(datasetClub, c);
+  return c;
+}
+
+/** Scale outfield (or keeper) attributes so the player reaches at least the target current ability. */
+function liftToCa(p: SeedPlayer, target: number) {
+  if (p.ca >= target) return;
+  for (let it = 0; it < 6 && p.ca < target; it++) {
+    const f = Math.min(1.25, target / Math.max(40, p.ca) + 0.004);
+    p.a = p.a.map((v, i) => Math.max(1, Math.min(200, Math.round(v * (isKeeperIdx(i, p) ? f : f)))));
+    p.ca = currentAbility(attrsFromArray(p.a), p.pos as never);
+  }
+}
+const isKeeperIdx = (_i: number, _p: SeedPlayer) => true;
+
+const TIER: Record<string, { pa: number; ca: number }> = { A: { pa: 186, ca: 150 }, B: { pa: 178, ca: 140 }, C: { pa: 170, ca: 128 }, D: { pa: 162, ca: 112 } };
+const researchText = readFileSync(join(here, 'data', 'prospects_2026.txt'), 'utf8');
+const research = researchText.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#')).map((l) => {
+  const [name, club, nat, pos, age, tier] = l.split('|').map((x) => x.trim());
+  return { name, club, nat: CODE_ALIASES[nat] ?? nat, pos: pos as Pos, age: Number(age), tier };
+});
+const patched: number[] = [];
+const v2Added: SeedPlayer[] = [];
+let generated = 0;
+
+/** Where a new young talent lives: his real club if it is in the world (and has room), otherwise a rest-of-world club. */
+function placeFor(datasetClub: string | null, researchClub: string | null, rowsForClub: Row[], opts: { nat?: string; elite?: boolean } = {}): string | null {
+  const cands = [researchClub ? clubByName.get(norm(researchClub)) ?? clubByDataset.get(researchClub) : undefined, datasetClub ? clubByDataset.get(datasetClub) : undefined]
+    .filter((m): m is ClubMeta => !!m);
+  for (const m of cands) {
+    const cap = (m.league === 'PL' ? 31 : 30) + (opts.elite ? 1 : 0);
+    if ((squadCount.get(m.key) ?? 0) < cap) {
+      squadCount.set(m.key, (squadCount.get(m.key) ?? 0) + 1);
+      return m.key;
+    }
+  }
+  // His club is in the world but its squad is full: leave him out rather than invent a duplicate club.
+  if (cands.length) return null;
+  const home = researchClub ?? datasetClub ?? null;
+  if (!home) return null;
+  return worldClubFor(home, rowsForClub, opts.nat).key;
+}
+
+function applyTier(p: SeedPlayer, tier: string, age: number) {
+  const t = TIER[tier];
+  if (!t) return false;
+  const caFloor = t.ca - Math.max(0, 18 - age) * 6;
+  const before = `${p.ca}/${p.pa}`;
+  liftToCa(p, caFloor);
+  p.pa = Math.max(p.pa, t.pa + rng2.int(0, 5), p.ca + 8);
+  return before !== `${p.ca}/${p.pa}`;
+}
+
+// 1) The research list: make sure each player exists with at least his tier's ability.
+for (const r of research) {
+  const toks = norm(r.name).split(' ').filter(Boolean);
+  const existing = players.find((p) => { const n = norm(p.name); return toks.every((t) => n.split(' ').includes(t)) && (p.nat === r.nat || toks.length >= 2); });
+  if (existing) {
+    if (applyTier(existing, r.tier, existing.age)) patched.push(existing.sid);
+    continue;
+  }
+  const row = rows.filter((x) => !x.claimed && toks.every((t) => x.longTokens.has(t) || x.shortNorm.split(' ').includes(t)) && (x.nat === r.nat || toks.length >= 2))
+    .sort((a, b) => b.potential - a.potential)[0];
+  if (row) {
+    const key = placeFor(row.club, r.club, [row], { nat: r.nat, elite: r.tier === 'A' || r.tier === 'B' });
+    if (!key) continue;
+    row.claimed = true;
+    const meta = CLUBS.find((c) => c.key === key) ?? null;
+    const p = fromRow(row, key, meta, { name: r.name });
+    p.wk = 1;
+    applyTier(p, r.tier, p.age);
+    v2Added.push(p);
+    continue;
+  }
+  // Not in the ratings data: generate him at his real club.
+  const t = TIER[r.tier] ?? TIER.D;
+  const g = generatePlayer(rng2, { pos: r.pos, targetCA: t.ca - Math.max(0, 18 - r.age) * 6 - 4, age: r.age });
+  const key = placeFor(null, r.club, [], { nat: r.nat, elite: r.tier === 'A' || r.tier === 'B' });
+  if (!key) continue;
+  const nameToks = r.name.split(/\s+/);
+  const p: SeedPlayer = {
+    sid: 0, club: key, name: r.name, short: nameToks.length > 1 ? nameToks.slice(1).join(' ') : r.name, first: nameToks[0], last: nameToks[nameToks.length - 1],
+    nat: r.nat, age: r.age, foot: g.foot, h: g.heightCm, pos: g.familiarity as Record<string, number>, a: attrsToArray(g.attrs), hd: hiddenToArray(g.hidden),
+    ca: g.ca, pa: 0, wage: wageModel(g.ca, 60), cy: rng2.int(3, 5), no: null, tr: deriveTraits(attrsFromArray(attrsToArray(g.attrs)), g.familiarity, g.ca + 20, rng2), wk: 1,
+  };
+  applyTier(p, r.tier, r.age);
+  v2Added.push(p);
+  generated++;
+}
+
+// 2) Every other top young talent in the ratings data that the world does not have yet.
+const prospectRows = rows
+  .filter((r) => !r.claimed && r.age <= 21 && r.overall >= 58 && (r.potential >= 80 || (r.age <= 19 && r.potential >= 78)))
+  .sort((a, b) => b.potential - a.potential || b.overall - a.overall)
+  .slice(0, 380);
+for (const r of prospectRows) {
+  const key = placeFor(r.club, null, [r], { nat: r.nat });
+  if (!key) continue;
+  r.claimed = true;
+  const meta = CLUBS.find((c) => c.key === key) ?? null;
+  const p = fromRow(r, key, meta);
+  p.wk = 1;
+  // A year on from the ratings snapshot: youngsters have grown a little.
+  const growth = r.age <= 18 ? 6 : r.age <= 20 ? 4 : 2;
+  liftToCa(p, Math.min(p.pa - 4, p.ca + growth));
+  v2Added.push(p);
+}
+for (const p of v2Added) { p.sid = sid++; players.push(p); }
+console.log(`v2: ${v2Added.length} young talents added (${generated} generated), ${patched.length} existing players lifted, ${worldClubs.size} rest-of-world clubs`);
+
 // ---------------------------------------------------------------- name pools
 const pools: Record<string, NamePool> = {};
 {
@@ -375,17 +537,19 @@ const pools: Record<string, NamePool> = {};
 }
 
 // ---------------------------------------------------------------- write
-const clubsOut = CLUBS.map((c) => ({
+const clubsOut = [...CLUBS.map((c) => ({
   key: c.key, name: c.name, short: c.short, league: c.league, country: c.country, colors: c.colors,
   stadium: c.stadium, capacity: c.capacity, reputation: c.reputation, archetype: c.archetype,
   rivals: c.rivals ?? [], lastPos: c.lastPos ?? null, europe: c.europe ?? null,
-}));
+})), ...worldClubs.values()];
 
 const seed = {
-  version: '2026-27.1',
+  version: '2026-27.2',
+  /** World data upgrades for leagues created from an earlier seed. */
+  upgrades: { v2: { firstSid: V2_FIRST_SID, patched } },
   generatedAt: new Date().toISOString(),
   season: '2026-27',
-  source: 'Ratings: community FC 26 dataset (update 4). Squads: Wikipedia club pages, September 2026.',
+  source: 'Ratings and PlayStyles: community FC 26 dataset (update 4). Squads: Wikipedia club pages, September 2026. Young talents: Goal NXGN 2026, Striver, Passion4FM and FM Scout wonderkid lists.',
   clubs: clubsOut,
   players,
   namePools: pools,

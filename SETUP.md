@@ -156,6 +156,14 @@ In *League admin → Group chat*, paste a **Discord webhook URL** (Discord serve
 
 Any change you push to GitHub is deployed by Vercel automatically. Database changes happen by themselves on the first request after a deploy, and your league's data is kept.
 
+When you get a new version as a zip:
+
+1. Unzip it. You get an `ffm` folder.
+2. Open your existing project folder (the one GitHub Desktop knows about). Copy **everything inside** the new `ffm` folder into it, and choose **Replace** when asked. Don't delete the hidden `.git` folder in your project.
+3. In GitHub Desktop you'll see the changed files. Type a summary such as `Update`, click **Commit to main**, then **Push origin**.
+4. Vercel deploys it in about 2 minutes (watch *Deployments* in Vercel).
+5. The next time the clock runs (within 15 minutes), your league is upgraded in place. New clubs and players are added, and results, squads, finances and accounts stay as they are. A news story tells everyone what's new.
+
 ## Running it on your own computer (optional)
 
 You need Node.js 20+ and a Postgres database (a local one, or your Supabase string).

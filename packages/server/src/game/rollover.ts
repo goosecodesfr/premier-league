@@ -1,6 +1,6 @@
 // Season end (honours, awards, qualification, reshuffle) and rollover into the next pre-season
 // (ageing, contracts, retirements, youth intake, free-agent refresh, budgets).
-import { Rng, generatePlayer, rollYouthPotential, attrsToArray, hiddenToArray, randomName, wageDemand, type Pos } from '@ffm/engine';
+import { Rng, generatePlayer, rollYouthPotential, attrsToArray, hiddenToArray, randomName, wageDemand, deriveTraits, attrsFromArray, type Pos } from '@ffm/engine';
 import { insertMany, type Db } from '../db.ts';
 import { DAY, HOUR } from '../lib/time.ts';
 import { clubStrengths } from './calendar.ts';
@@ -149,7 +149,7 @@ export async function rollover(d: Db, world: WorldRow, now: Date) {
     if (!c || c.manager_type === 'human') continue;
     const squad = byClub.get(c.id) ?? [];
     const rank = squad.filter((x) => x.ca > p.ca).length + 1;
-    const keep = rank <= 22 && p.age <= 33 && !p.flags?.wantsOut && rng.chance(rank <= 14 ? 0.95 : 0.8);
+    const keep = c.league === 'WORLD' ? p.age <= 30 : rank <= 22 && p.age <= 33 && !p.flags?.wantsOut && rng.chance(rank <= 14 ? 0.95 : 0.8);
     if (keep) {
       const years = p.age >= 30 ? 1 : p.age >= 27 ? 2 : 3;
       const wage = wageDemand({ ca: p.ca, age: p.age, currentWage: p.wage }, c.reputation);
@@ -190,6 +190,7 @@ export async function rollover(d: Db, world: WorldRow, now: Date) {
   const intakeReport = new Map<number, string[]>();
   const pools = namePools();
   for (const c of clubs) {
+    if (c.league === 'WORLD') continue;
     const n = c.league === 'PL' ? rng.int(3, 5) : rng.int(1, 3);
     const quality = Math.max(0, Math.min(1, ((c.facilities.youth ?? 2) - 1) / 4 * 0.6 + (c.reputation - 50) / 50 * 0.4));
     for (let i = 0; i < n; i++) {
@@ -201,14 +202,33 @@ export async function rollover(d: Db, world: WorldRow, now: Date) {
       const nat = rng.chance(0.78) ? c.country : rng.pick(Object.keys(pools));
       const nm = randomName(rng, pools, nat);
       const wage = 1500 + Math.round(quality * 3000);
-      intake.push([c.id, 'active', `${nm.first} ${nm.last}`, nm.last, nm.first, nm.last, nat, age, g.foot, g.heightCm, JSON.stringify(g.familiarity), attrsToArray(g.attrs), hiddenToArray(g.hidden), g.ca, pa, 100, 50, 1, 1.02, 0, wage, newSeason + 2, null, 0, JSON.stringify({ youth: true }), '[]', JSON.stringify([{ season: newSeason, club: c.short, kind: 'youth' }]), newSeason]);
+      // Youngsters show a flash of what they will become: traits from their best attributes, judged by potential.
+      const traits = deriveTraits(g.attrs, g.familiarity, Math.round((g.ca + pa) / 2) - 10, rng);
+      intake.push([c.id, 'active', `${nm.first} ${nm.last}`, nm.last, nm.first, nm.last, nat, age, g.foot, g.heightCm, JSON.stringify(g.familiarity), attrsToArray(g.attrs), hiddenToArray(g.hidden), g.ca, pa, 100, 50, 1, 1.02, 0, wage, newSeason + 2, null, 0, JSON.stringify({ youth: true }), '[]', JSON.stringify([{ season: newSeason, club: c.short, kind: 'youth' }]), newSeason, JSON.stringify(traits)]);
       if (c.manager_type === 'human') (intakeReport.get(c.id) ?? intakeReport.set(c.id, []).get(c.id)!).push(`${nm.first} ${nm.last} (${pos}, ${age})`);
       if (pa >= 175 && c.league === 'PL') {
         await addNews(d, world, { type: 'milestone', clubIds: [c.id], headline: `${c.short} academy produces a gem`, body: `Scouts are raving about ${nm.first} ${nm.last}, a ${age}-year-old ${pos === 'GK' ? 'goalkeeper' : 'prospect'}.`, importance: 2 });
       }
     }
   }
-  await insertMany(d, 'players', ['club_id', 'status', 'name', 'short', 'first_name', 'last_name', 'nat', 'age', 'foot', 'height', 'positions', 'attrs', 'hidden', 'ca', 'pa', 'condition', 'sharpness', 'form', 'morale', 'fatigue_debt', 'wage', 'contract_until', 'squad_number', 'value', 'flags', 'form_history', 'history', 'joined_season'], intake);
+  await insertMany(d, 'players', ['club_id', 'status', 'name', 'short', 'first_name', 'last_name', 'nat', 'age', 'foot', 'height', 'positions', 'attrs', 'hidden', 'ca', 'pa', 'condition', 'sharpness', 'form', 'morale', 'fatigue_debt', 'wage', 'contract_until', 'squad_number', 'value', 'flags', 'form_history', 'history', 'joined_season', 'traits'], intake);
+
+  // Young players pick up new signature traits as they develop.
+  const learners = await loadPlayers(d, `status = 'active' and age <= 27 and ca >= 120`);
+  let learned = 0;
+  for (const p of learners) {
+    const have = p.traits ?? {};
+    if (Object.keys(have).length >= 5 || !rng.chance(0.14)) continue;
+    const cand = deriveTraits(attrsFromArray(p.attrs), p.positions, p.ca + 25, rng);
+    const fresh = Object.keys(cand).find((k) => !(k in have));
+    if (!fresh) continue;
+    await d.q(`update players set traits = traits || $2::jsonb where id = $1`, [p.id, JSON.stringify({ [fresh]: 1 })]);
+    learned++;
+    if (p.club_id && clubs.find((c) => c.id === p.club_id)?.manager_type === 'human') {
+      await notifyClub(d, p.club_id, { type: 'system', title: `${p.name} has developed a new trait`, body: `He has added ${fresh.replace(/_/g, ' ')} to his game.`, link: `/player/${p.id}` });
+    }
+  }
+  void learned;
   for (const [clubId, list] of intakeReport) await notifyClub(d, clubId, { type: 'system', title: 'Youth intake report', body: `New academy graduates: ${list.join(', ')}.`, link: '/squad/youth' });
 
   // Free agent refresh: promote reserve players, keep ~180 free agents
@@ -216,7 +236,7 @@ export async function rollover(d: Db, world: WorldRow, now: Date) {
   await d.q(`update players set status = 'retired' where id in (select id from players where status = 'free' and age >= 33 order by random() limit 40)`);
 
   // Pool clubs keep healthy squads
-  for (const c of clubs.filter((x) => x.league !== 'PL')) {
+  for (const c of clubs.filter((x) => x.league === 'EUR' || x.league === 'CHAMP')) {
     const n = (await d.one<{ n: number }>(`select count(*)::int n from players where club_id = $1 and status = 'active'`, [c.id]))?.n ?? 0;
     if (n < 22) {
       await d.q(`update players set club_id = $1, status = 'active', contract_until = $3, wage = greatest(wage, 5000) where id in (

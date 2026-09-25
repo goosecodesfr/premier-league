@@ -2,18 +2,21 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { NamePool } from '@ffm/engine';
+import type { NamePool, Traits } from '@ffm/engine';
 
 export interface SeedClub {
-  key: string; name: string; short: string; league: 'PL' | 'EUR' | 'CHAMP'; country: string; colors: [string, string];
+  key: string; name: string; short: string; league: 'PL' | 'EUR' | 'CHAMP' | 'WORLD'; country: string; colors: [string, string];
   stadium: string; capacity: number; reputation: number; archetype: string; rivals: string[]; lastPos: number | null; europe: 'UCL' | 'UEL' | null;
 }
 export interface SeedPlayer {
   sid: number; club: string | null; name: string; short: string; first: string; last: string; nat: string; age: number;
   foot: 'L' | 'R' | 'B'; h: number; pos: Record<string, number>; a: number[]; hd: number[]; ca: number; pa: number; wage: number; cy: number; no: number | null; fc?: number;
+  tr?: Traits;
+  wk?: 1;
 }
 export interface Seed {
   version: string;
+  upgrades?: { v2?: { firstSid: number; patched: number[] } };
   season: string;
   source: string;
   clubs: SeedClub[];

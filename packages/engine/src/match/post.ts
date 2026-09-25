@@ -2,7 +2,8 @@
 // Everything here is derived from the simulation state and event log; nothing is re-simulated.
 import { POS_LINE, type Pos } from '../positions.ts';
 import type { MatchSim } from './engine.ts';
-import type { Finding, KeyMoment, MatchResult, PlayerMatchStat, TeamStats } from './types.ts';
+import { TRAITS, type TraitKey } from '../traits.ts';
+import type { DecisionReport, Finding, KeyMoment, MatchResult, PlayerMatchStat, TeamStats } from './types.ts';
 
 const LEAGUE_MID_THIRD_COMPLETION = 0.8;
 
@@ -148,6 +149,7 @@ export function finaliseMatch(sim: MatchSim): MatchResult {
 
   // ---- findings ----
   const findings = buildFindings(sim, winner);
+  const decisions: MatchResult['decisions'] = [decisionReport(sim, 0), decisionReport(sim, 1)];
 
   // ---- verdict & summary ----
   const verdict = buildVerdict(sim, motm);
@@ -172,6 +174,55 @@ export function finaliseMatch(sim: MatchSim): MatchResult {
     verdict,
     summaryWord,
     minutesPlayed: total,
+    decisions,
+  };
+}
+
+const PI_STAT: Record<string, [string, (s: PlayerMatchStat) => number]> = {
+  shooting: ['shots', (s) => s.shots],
+  dribbling: ['dribbles', (s) => s.dribbles],
+  passing: ['key passes', (s) => s.keyPasses],
+  crossing: ['crosses', (s) => s.crosses],
+  movement: ['touches in the final third', (s) => s.zoneTouches.slice(12).reduce((a, b) => a + b, 0)],
+  width: ['touches in central areas', (s) => s.zoneTouches.filter((_, z) => z % 3 === 1).reduce((a, b) => a + b, 0)],
+  press: ['pressures', (s) => s.pressures],
+  tackling: ['fouls', (s) => s.fouls],
+};
+
+function decisionReport(sim: MatchSim, side: 0 | 1): DecisionReport {
+  const t = sim.teams[side];
+  const o = sim.teams[1 - side];
+  const st = t.stats;
+  const ch = st.attacksByChannel;
+  const chTot = ch[0] + ch[1] + ch[2] || 1;
+  const outOfPosition = t.players
+    .filter((ps) => ps.used && !ps.isGk && ps.st.fam < 0.75 && ps.st.minutes >= 20)
+    .map((ps) => ({ playerId: ps.p.id, pos: ps.st.pos, fam: ps.st.fam, duelsLost: ps.duelsLost, rating: ps.st.rating, passes: ps.st.passes, passesCompleted: ps.st.passesCompleted }));
+  const instructionUse: DecisionReport['instructionUse'] = [];
+  t.input.tactic.slots.forEach((slot, i) => {
+    if (!slot.pi) return;
+    const starter = t.players.find((ps) => ps.started && t.input.lineup[i] === ps.p.id);
+    if (!starter) return;
+    for (const [k, v] of Object.entries(slot.pi)) {
+      const m = PI_STAT[k];
+      if (!m || !v) continue;
+      instructionUse.push({ playerId: starter.p.id, key: k, value: String(v), count: m[1](starter.st), stat: m[0] });
+    }
+  });
+  return {
+    pressWinsHigh: t.dec.highWins,
+    ppda: Math.round((t.dec.oppPassesOwn60 / Math.max(1, t.dec.defActionsHigh)) * 10) / 10,
+    throughConceded: t.dec.throughFaced,
+    throughCompleted: t.dec.throughFacedDone,
+    offsidesWon: o.stats.offsides,
+    flank: [Math.round((ch[0] / chTot) * 100), Math.round((ch[1] / chTot) * 100), Math.round((ch[2] / chTot) * 100)],
+    counters: st.counters,
+    countersShots: st.chanceOrigins.counter,
+    crossesShots: st.chanceOrigins.cross,
+    longShots: st.chanceOrigins.long_shot,
+    setPieceXg: Math.round(t.dec.spXg * 100) / 100,
+    outOfPosition,
+    instructionUse,
   };
 }
 
@@ -274,6 +325,24 @@ function buildFindings(sim: MatchSim, winner: 0 | 1 | null): Finding[] {
     // Fatigue
     const spent = t.players.filter((p) => p.used && p.onPitch && p.cond < 50).length;
     if (spent >= 3) out.push({ side, kind: 'fatigue', weight: 2 + spent, headline: `${name} ran out of legs.`, detail: `${spent} players finished below 50% condition${t.ins.press === 'all_out' || t.ins.press === 'high' ? ' after an intense pressing game' : ''}.`, metric: `${spent} players` });
+    // Signature traits that decided moments
+    for (const ps of t.players) {
+      for (const [k, n] of Object.entries(ps.st.traitMoments)) {
+        if (!n) continue;
+        const def = TRAITS[k as TraitKey];
+        if (!def) continue;
+        out.push({ side, kind: 'player', weight: 3 + n * 2.2, headline: `${ps.p.short}'s ${def.name} made the difference.`, detail: `${def.effect} It decided ${n} moment${n > 1 ? 's' : ''} in this match.`, metric: `${n}` });
+      }
+    }
+    // Players out of position
+    for (const ps of t.players) {
+      if (!ps.used || ps.isGk || ps.st.fam >= 0.6 || ps.st.minutes < 30) continue;
+      out.push({ side, kind: 'player', weight: 2.5 + ps.duelsLost * 0.4 + (6.5 - Math.min(6.5, ps.st.rating)) * 2, headline: `${ps.p.short} looked lost at ${ps.st.pos}.`, detail: `It is not a position he knows (${Math.round(ps.st.fam * 100)}% familiar). ${ps.duelsLost > 0 ? `He was beaten ${ps.duelsLost} time${ps.duelsLost === 1 ? '' : 's'}` : ps.st.passes > 0 ? `He completed ${ps.st.passesCompleted} of ${ps.st.passes} passes` : 'He barely got into the game'} and rated ${ps.st.rating.toFixed(1)}.`, metric: `${Math.round(ps.st.fam * 100)}%` });
+    }
+    // High press
+    if (t.dec.highWins >= 9) {
+      out.push({ side, kind: 'style', weight: 2 + t.dec.highWins / 4, headline: `${name}'s press won the ball high up the pitch.`, detail: `${t.dec.highWins} regains in ${oname}'s half, allowing only ${(t.dec.oppPassesOwn60 / Math.max(1, t.dec.defActionsHigh)).toFixed(1)} passes per defensive action.`, metric: `${t.dec.highWins}` });
+    }
     // Triggers
     for (const tr of sim.triggersFired.filter((x) => x.side === side)) {
       const after = sim.events.filter((e) => e.t === 'goal' && e.side === side && e.m >= tr.minute).length;

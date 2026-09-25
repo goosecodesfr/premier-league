@@ -36,7 +36,7 @@ export async function dailyEvents(d: Db, world: WorldRow, now: Date) {
   }
   // Pool clubs occasionally get takeovers or injuries too (lower fidelity)
   if (rng.chance(0.08)) {
-    const pool = await d.one<ClubRow>(`select * from clubs where league <> 'PL' order by random() limit 1`);
+    const pool = await d.one<ClubRow>(`select * from clubs where league in ('EUR','CHAMP') order by random() limit 1`);
     if (pool) {
       const squad = await loadPlayers(d, `club_id = $1 and status = 'active'`, [pool.id]);
       if (squad.length > 12) await runEvent(d, world, pool, squad, 'training_injury', rng, now).catch(() => {});

@@ -9,6 +9,69 @@ export interface TacticSlot {
   y: number;
   role: RoleKey;
   duty: Duty;
+  /** Individual instructions for whoever plays in this position. */
+  pi?: PlayerInstructions;
+}
+
+// ---- Individual player instructions ----
+export interface PlayerInstructions {
+  shooting?: 'less' | 'more';
+  dribbling?: 'less' | 'more';
+  passing?: 'safe' | 'risky';
+  crossing?: 'less' | 'more';
+  movement?: 'hold' | 'forward';
+  width?: 'inside' | 'wide';
+  press?: 'less' | 'more';
+  tackling?: 'careful' | 'hard';
+}
+
+export type PlayerInstructionKey = keyof PlayerInstructions;
+
+export const PLAYER_INSTRUCTION_OPTIONS: { [K in PlayerInstructionKey]-?: { label: string; options: { value: NonNullable<PlayerInstructions[K]>; label: string; effect: string }[]; gk?: boolean } } = {
+  shooting: { label: 'Shooting', options: [
+    { value: 'less', label: 'Shoot less', effect: 'Only shoots from good positions; looks for a pass instead.' },
+    { value: 'more', label: 'Shoot more', effect: 'Shoots whenever he can, including from distance.' },
+  ] },
+  dribbling: { label: 'Dribbling', options: [
+    { value: 'less', label: 'Dribble less', effect: 'Moves the ball on quickly; fewer turnovers, less penetration.' },
+    { value: 'more', label: 'Dribble more', effect: 'Takes his man on; more chances created and more balls lost.' },
+  ] },
+  passing: { label: 'Passing', options: [
+    { value: 'safe', label: 'Keep it simple', effect: 'Safe, short passes; keeps possession.' },
+    { value: 'risky', label: 'Take more risks', effect: 'Looks for killer balls in behind; more chances, more turnovers.' },
+  ] },
+  crossing: { label: 'Crossing', options: [
+    { value: 'less', label: 'Cross less', effect: 'Works the ball inside instead of crossing.' },
+    { value: 'more', label: 'Cross more', effect: 'Gets the ball into the box at every opportunity.' },
+  ] },
+  movement: { label: 'Movement', options: [
+    { value: 'hold', label: 'Hold position', effect: 'Stays in his zone; better cover, less support in attack.' },
+    { value: 'forward', label: 'Push forward', effect: 'Pushes up to join attacks; leaves space behind him.' },
+  ] },
+  width: { label: 'Width', options: [
+    { value: 'inside', label: 'Cut inside', effect: 'Drifts into the middle, towards goal.' },
+    { value: 'wide', label: 'Stay wide', effect: 'Hugs the touchline to stretch the defence.' },
+  ] },
+  press: { label: 'Pressing', options: [
+    { value: 'less', label: 'Press less', effect: 'Holds shape and saves energy.' },
+    { value: 'more', label: 'Press more', effect: 'Closes down aggressively; wins it higher up, tires faster.' },
+  ] },
+  tackling: { label: 'Tackling', options: [
+    { value: 'careful', label: 'Stay on feet', effect: 'Fewer fouls and cards; loses a few more duels.' },
+    { value: 'hard', label: 'Get stuck in', effect: 'Wins more duels; more fouls and cards.' },
+  ] },
+};
+
+export const PLAYER_INSTRUCTION_KEYS = Object.keys(PLAYER_INSTRUCTION_OPTIONS) as PlayerInstructionKey[];
+
+export function cleanPlayerInstructions(pi: unknown): PlayerInstructions | undefined {
+  if (!pi || typeof pi !== 'object') return undefined;
+  const out: Record<string, string> = {};
+  for (const k of PLAYER_INSTRUCTION_KEYS) {
+    const v = (pi as Record<string, unknown>)[k];
+    if (typeof v === 'string' && PLAYER_INSTRUCTION_OPTIONS[k].options.some((o) => o.value === v)) out[k] = v;
+  }
+  return Object.keys(out).length ? (out as PlayerInstructions) : undefined;
 }
 
 export interface Instructions {
@@ -192,7 +255,12 @@ export const OPTION_LABELS: Record<string, string> = {
 
 export function normaliseTactic(t: Partial<Tactic> & { slots?: TacticSlot[] }): Tactic {
   const base = makeTactic(t.name ?? 'Tactic', '4-3-3');
-  const slots = t.slots && t.slots.length === 11 ? t.slots : base.slots;
+  const slots = (t.slots && t.slots.length === 11 ? t.slots : base.slots).map((s) => {
+    const pi = cleanPlayerInstructions(s.pi);
+    const { pi: _drop, ...rest } = s;
+    void _drop;
+    return pi ? { ...rest, pi } : rest;
+  });
   return {
     name: (t.name ?? 'Tactic').slice(0, 30),
     formation: t.formation ?? detectFormation(slots),

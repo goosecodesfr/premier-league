@@ -200,7 +200,8 @@ async function persistResult(
     ? gate(home, { importance: meta.importance, oppRep: away.reputation, comp: comp.type, neutral: f.neutral })
     : { attendance: 0, revenue: 0 };
   // compact summary for the result screens
-  const lineupInfo = (s: Sheet, side: 0 | 1) => res.players.filter((p) => p.side === side).map((p) => ({ id: p.playerId, n: p.name, s: p.short, pos: p.pos, r: p.role, st: p.started, on: p.onAt, off: p.offAt, rt: p.rating, g: p.goals, a: p.assists, y: p.yellow, rd: p.red, inj: p.injured, min: p.minutes, xg: +p.xg.toFixed(2), og: p.ownGoals, pen: p.penaltiesScored, zt: p.zoneTouches }));
+  const lineupInfo = (s: Sheet, side: 0 | 1) => res.players.filter((p) => p.side === side).map((p) => ({ id: p.playerId, n: p.name, s: p.short, pos: p.pos, r: p.role, st: p.started, on: p.onAt, off: p.offAt, rt: p.rating, g: p.goals, a: p.assists, y: p.yellow, rd: p.red, inj: p.injured, min: p.minutes, xg: +p.xg.toFixed(2), og: p.ownGoals, pen: p.penaltiesScored, zt: p.zoneTouches,
+    fam: p.fam, pr: p.pressures, pg: p.progressive, sh: p.shots, kp: p.keyPasses, dr: p.dribbles, drc: p.dribblesCompleted, cr: p.crosses, tk: p.tacklesWon, int: p.interceptions, tm: p.traitMoments }));
   const shots = res.events.filter((e) => (e.t === 'shot' || e.t === 'goal') && e.side >= 0 && e.xg !== undefined).map((e) => ({ m: e.m, ex: e.ex, side: e.side, xg: e.xg, o: e.t === 'goal' ? 'goal' : e.o, or: e.t === 'goal' ? e.o : e.or, z: e.z, a: e.a }));
   const summary = {
     stats: res.stats.map((s) => ({ ...s, zonePasses: s.zonePasses, zoneTouches: s.zoneTouches })),
@@ -211,7 +212,8 @@ async function persistResult(
     modifiers: res.modifiers, momentum: res.momentum, word: res.summaryWord, injuries: res.injuries,
     lineups: [lineupInfo(hs, 0), lineupInfo(as, 1)], formations: [hs.tactic.formation, as.tactic.formation],
     tactics: [{ name: hs.tactic.name, mentality: hs.tactic.mentality, by: hs.submitted_by }, { name: as.tactic.name, mentality: as.tactic.mentality, by: as.submitted_by }],
-    shots, weather: meta.weather, derby: meta.derby,
+    shots, weather: meta.weather, derby: meta.derby, decisions: res.decisions,
+    traitGoals: res.events.filter((e) => e.t === 'goal' && e.tr).map((e) => ({ m: e.m, side: e.side, a: e.a, tr: e.tr })),
   };
   await t.q(
     `update fixtures set status = 'played', home_goals = $2, away_goals = $3, extra_time = $4, pens = $5, winner_id = $6,
@@ -225,7 +227,7 @@ async function persistResult(
   const pmRows = res.players.map((p) => [
     f.id, p.playerId, p.side === 0 ? home.id : away.id, world.season_no, comp.type, p.started, p.minutes, p.rating, p.goals, p.assists, p.shots,
     Math.round(p.xg * 100) / 100, p.yellow, p.red, cleanSheet[p.side] && p.minutes >= 60,
-    JSON.stringify({ kp: p.keyPasses, pa: p.passes, pc: p.passesCompleted, tk: p.tacklesWon, int: p.interceptions, sv: p.saves, dr: p.dribblesCompleted, cr: p.crossesCompleted, xa: +p.xa.toFixed(2), og: p.ownGoals }),
+    JSON.stringify({ kp: p.keyPasses, pa: p.passes, pc: p.passesCompleted, tk: p.tacklesWon, int: p.interceptions, sv: p.saves, dr: p.dribblesCompleted, cr: p.crossesCompleted, xa: +p.xa.toFixed(2), og: p.ownGoals, pr: p.pressures, pg: p.progressive, pos: p.pos, fam: p.fam, tm: Object.keys(p.traitMoments).length ? p.traitMoments : undefined }),
   ]);
   if (pmRows.length) await insertMany(t, 'player_match', ['fixture_id', 'player_id', 'club_id', 'season_no', 'comp_type', 'started', 'minutes', 'rating', 'goals', 'assists', 'shots', 'xg', 'yellow', 'red', 'clean_sheet', 'stats'], pmRows, 'on conflict do nothing');
 

@@ -1,7 +1,7 @@
 // Saved tactics: list, editor data, save with familiarity cost, duplicate/delete/default, auto-fill.
 import {
   FORMATIONS, FORMATION_KEYS, POSITIONS, ROLES, INSTRUCTION_OPTIONS, detectFormation, lineupWarnings, makeTactic, normaliseTactic,
-  rolesForPosition, defaultRoleForPosition, selectTeam, displayRating,
+  rolesForPosition, defaultRoleForPosition, selectTeam, displayRating, cleanPlayerInstructions,
   type Instructions, type Pos, type Tactic, type TacticSlot, type Trigger, type FormationKey,
 } from '@ffm/engine';
 import { db, tx, type Db } from '../db.ts';
@@ -36,7 +36,8 @@ export function cleanTactic(input: unknown, squadIds: Set<number>): Tactic {
     if (!ROLES[role].duties.includes(duty)) duty = ROLES[role].defaultDuty;
     const x = Math.max(4, Math.min(96, Number(s.x) || 50));
     const y = Math.max(3, Math.min(92, Number(s.y) || 50));
-    return { pos, x: Math.round(x), y: Math.round(y), role, duty };
+    const pi = pos === 'GK' ? undefined : cleanPlayerInstructions(s.pi);
+    return { pos, x: Math.round(x), y: Math.round(y), role, duty, ...(pi ? { pi } : {}) };
   });
   const t = normaliseTactic({ ...raw, slots, formation: detectFormation(slots) });
   // instruction values must be legal
@@ -112,6 +113,8 @@ export function familiarityAfterEdit(prev: Tactic, next: Tactic, fam: number): n
   else f -= moved * 0.05;
   const roleChanges = next.slots.filter((s, i) => prev.slots[i] && (prev.slots[i].role !== s.role || prev.slots[i].duty !== s.duty)).length;
   f -= roleChanges * 0.012;
+  const piChanges = next.slots.filter((s, i) => prev.slots[i] && JSON.stringify(prev.slots[i].pi ?? {}) !== JSON.stringify(s.pi ?? {})).length;
+  f -= piChanges * 0.004;
   const insChanges = (Object.keys(next.instructions) as (keyof Instructions)[]).filter((k) => next.instructions[k] !== prev.instructions[k]).length;
   f -= insChanges * 0.008;
   if (prev.mentality !== next.mentality) f -= 0.01;
@@ -149,7 +152,7 @@ export async function tacticEditorData(ctx: Ctx) {
   return {
     tactic: out,
     warnings: lineupWarnings(sel, out.data, out.lineup, t.familiarity, out.captainId),
-    squad: squad.map((p) => ({ ...playerLite(p, w.season_no), attrs: p.attrs, fam: p.positions, formValue: p.form, moraleValue: p.morale })),
+    squad: squad.map((p) => ({ ...playerLite(p, w.season_no), attrs: p.attrs, fam: p.positions, formValue: p.form, moraleValue: p.morale, traits: p.traits ?? {} })),
     others: (await clubTacticsList(db, club.id)).filter((x) => x.id !== t.id).map((x) => ({ id: x.id, name: x.name })),
     benchMax: BENCH_MAX,
     formations: FORMATION_KEYS,

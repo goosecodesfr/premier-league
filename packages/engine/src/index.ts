@@ -13,3 +13,5 @@ export { winProb, playerRating } from './match/post.ts';
 export { ZONES, zoneOf, bandOf, chanOf, mirror, BAND_NAMES, CHAN_NAMES } from './match/presence.ts';
 export { renderCommentary, COMMENTARY_KEYS, commentaryVariants } from './match/commentary.ts';
 export * from './rules.ts';
+export * from './traits.ts';
+export * from './analysis.ts';

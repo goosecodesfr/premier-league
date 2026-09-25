@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Bookmark, Clock, Handshake, Inbox, Lightbulb, Lock, Search as SearchIcon, SlidersHorizontal, Star, Telescope, Trash2, X } from 'lucide-react';
+import { ArrowRight, Bookmark, Clock, EyeOff, Globe2, Handshake, Inbox, Lightbulb, Lock, Megaphone, Search as SearchIcon, SlidersHorizontal, Sparkles, Star, Telescope, Trash2, X } from 'lucide-react';
 import type { NegotiationData, OffersData, ScoutingData, SearchData, ShortlistData, SuggestedData, TransferHubData } from '@ffm/server/routes/transfers';
 import { api, qs } from '../lib/api';
 import { ago, countdown, inWords, money, wage } from '../lib/format';
@@ -47,6 +47,11 @@ export function TransferHub() {
                 </Link>
               ))}
             </div>
+            <Link to="/transfers/search?prospects=1" className="mb-6 flex items-center gap-3 rounded-[12px] border border-subtle bg-surface p-4 active:bg-raised">
+              <Sparkles size={22} className="text-warning shrink-0" />
+              <div className="flex-1 min-w-0"><div className="t-strong">Young talents</div><div className="t-label text-fg2">The best under-21s in the world, from academies to South American first teams.</div></div>
+              <ArrowRight size={18} className="text-fg3" />
+            </Link>
             <Section title="Around the league">
               {d.feed.length === 0 ? <Card><div className="t-label text-fg3">Quiet so far. The bots will get busy.</div></Card> : (
                 <List>
@@ -55,7 +60,7 @@ export function TransferHub() {
                       <ClubCrest club={x.to} size={28} />
                       <div className="flex-1 min-w-0">
                         <div className="t-body truncate"><b>{x.to?.short}</b> {x.kind === 'done' ? (x.status === 'free' ? 'sign' : 'sign') : x.status === 'rejected' ? 'had a bid rejected for' : x.status === 'countered' ? 'are haggling over' : 'bid for'} {x.player}</div>
-                        <div className="t-label text-fg3 truncate">{x.from ? `from ${x.from.short} · ` : x.status === 'free' ? 'free agent · ' : ''}{ago(x.at)}</div>
+                        <div className="t-label text-fg3 truncate">{x.leaked && <span className="text-warning font-semibold">Leaked · </span>}{x.from ? `from ${x.from.short} · ` : x.status === 'free' ? 'free agent · ' : ''}{ago(x.at)}</div>
                       </div>
                       <span className={cx('t-num', x.kind === 'bid' && 'text-fg2')}>{x.fee ? money(x.fee) : 'Free'}</span>
                     </Link>
@@ -72,6 +77,7 @@ export function TransferHub() {
 
 // ---------------------------------------------------------------- search
 type SearchResult = SearchData['results'][number];
+const LEAGUE_NAMES: Record<string, string> = { PL: 'Premier League', EUR: 'Europe', CHAMP: 'Championship', WORLD: 'Rest of the world' };
 const POS_CHIPS = ['GK', 'DC', 'DL', 'DR', 'DM', 'MC', 'AMC', 'AML', 'AMR', 'ST'];
 
 function ResultRow({ p, onBid }: { p: SearchResult; onBid: (id: number) => void }) {
@@ -94,7 +100,7 @@ export function Search() {
   const [bidFor, setBidFor] = useState<number | null>(null);
   const deb = useDebouncedCallback((v: string) => { const p = new URLSearchParams(params); if (v) p.set('q', v); else p.delete('q'); p.delete('page'); setParams(p, { replace: true }); }, 350);
   const filters = Object.fromEntries(params.entries());
-  const active = ['q', 'pos', 'ageMin', 'ageMax', 'valueMax', 'wageMax', 'status', 'minOvr', 'foot', 'league'].some((k) => params.get(k));
+  const active = ['q', 'pos', 'ageMin', 'ageMax', 'valueMax', 'wageMax', 'status', 'minOvr', 'foot', 'league', 'prospects'].some((k) => params.get(k));
   const page = Number(params.get('page') ?? 0);
   const q = useQuery({ queryKey: ['search', params.toString()], queryFn: () => api.get<SearchData>(`/transfers/search?${params.toString()}`), enabled: active, placeholderData: (p) => p });
   const sug = useQuery({ queryKey: ['suggested'], queryFn: () => api.get<SuggestedData>('/transfers/suggested'), enabled: !active, staleTime: 300_000 });
@@ -113,13 +119,15 @@ export function Search() {
   if (params.get('wageMax')) chips.push(['wageMax', `Wage ≤ ${money(Number(params.get('wageMax')))}`]);
   if (params.get('status')) chips.push(['status', { free: 'Free agents', listed: 'Transfer-listed', expiring: 'Contract expiring' }[params.get('status')!] ?? '']);
   if (params.get('minOvr')) chips.push(['minOvr', `Overall ${params.get('minOvr')}+`]);
-  if (params.get('league')) chips.push(['league', { PL: 'Premier League', EUR: 'Europe', CHAMP: 'Championship' }[params.get('league')!] ?? '']);
+  if (params.get('prospects')) chips.push(['prospects', 'Young talents']);
+  if (params.get('league')) chips.push(['league', LEAGUE_NAMES[params.get('league')!] ?? '']);
   if (params.get('foot')) chips.push(['foot', `${params.get('foot') === 'L' ? 'Left' : params.get('foot') === 'R' ? 'Right' : 'Two'}-footed`]);
   return (
     <Screen title="Player search" back="/transfers" actions={<IconButton label="Filters" badge={chips.length > 0} onClick={() => setFilterOpen(true)}><SlidersHorizontal size={20} /></IconButton>}>
       <div className="relative mb-2"><SearchIcon size={18} className="absolute left-3 top-3.5 text-fg3" /><input className={cx(inputCls, 'pl-10 pr-10')} placeholder="Search by name" value={text} onChange={(e) => { setText(e.target.value); deb.call(e.target.value.trim()); }} />{text && <button aria-label="Clear" className="absolute right-3 top-3.5 text-fg3" onClick={() => { setText(''); deb.flush(''); }}><X size={18} /></button>}</div>
       <ChipRow className="mb-3">
         {chips.map(([k, l]) => <Chip key={k} selected onClick={() => { if (k === 'age') { const p = new URLSearchParams(params); p.delete('ageMin'); p.delete('ageMax'); setParams(p, { replace: true }); } else setF(k, null); }}>{l} ✕</Chip>)}
+        {!chips.length && <Chip onClick={() => setF('prospects', '1')}><span className="inline-flex items-center gap-1"><Sparkles size={13} className="text-warning" />Young talents</span></Chip>}
         {!chips.length && ['free', 'listed', 'expiring'].map((s) => <Chip key={s} onClick={() => setF('status', s)}>{{ free: 'Free agents', listed: 'Transfer-listed', expiring: 'Contracts expiring' }[s]}</Chip>)}
         {!chips.length && ['ST', 'AMR', 'MC', 'DC', 'GK'].map((p) => <Chip key={p} onClick={() => setF('pos', p)}>{p}</Chip>)}
       </ChipRow>
@@ -151,6 +159,7 @@ export function Search() {
                 <Select className="!h-9 !w-[170px] text-[13px]" ariaLabel="Sort" value={params.get('sort') ?? 'ovr'} onChange={(v) => setF('sort', v)} options={[{ value: 'ovr', label: 'Best first' }, { value: 'value', label: 'Most valuable' }, { value: 'cheap', label: 'Cheapest' }, { value: 'age', label: 'Youngest' }, { value: 'wage', label: 'Lowest wage' }, { value: 'contract', label: 'Contract ending' }]} />
                 <button className="t-label text-accent flex items-center gap-1" onClick={() => { const name = window.prompt('Name this search'); if (name) saveSearch.mutate(name.slice(0, 30)); }}><Bookmark size={14} /> Save search</button>
               </div>
+              {params.get('prospects') && <div className="t-label text-fg2 mb-2">Under-21s with real potential. Your scouts' view of their ceiling is shown as a range; send scouts to narrow it down before paying big money.</div>}
               {d.results.length === 0 ? <EmptyState icon={<SearchIcon size={24} />} title="No players match" body="Loosen a filter or two." /> : (
                 <>
                   <List>{d.results.map((p) => <ResultRow key={p.id} p={p} onBid={setBidFor} />)}</List>
@@ -188,7 +197,8 @@ function FilterSheet({ open, onClose, values, apply }: { open: boolean; onClose:
       <Field label="Maximum wage"><Select value={v.wageMax ?? ''} onChange={(x) => set('wageMax', x)} options={[{ value: '', label: 'Any' }, ...[20, 40, 60, 80, 120, 180, 250].map((k) => ({ value: String(k * 1000), label: `£${k}k/wk` }))]} /></Field>
       <Field label="Minimum overall"><Select value={v.minOvr ?? ''} onChange={(x) => set('minOvr', x)} options={[{ value: '', label: 'Any' }, ...[10, 12, 13, 14, 15, 16, 17].map((n) => ({ value: String(n), label: `${n}+` }))]} /></Field>
       <Field label="Availability"><Segmented size="sm" value={v.status ?? ''} onChange={(x) => set('status', x)} options={[{ value: '', label: 'All' }, { value: 'free', label: 'Free' }, { value: 'listed', label: 'Listed' }, { value: 'expiring', label: 'Expiring' }]} /></Field>
-      <Field label="League"><Segmented size="sm" value={v.league ?? ''} onChange={(x) => set('league', x)} options={[{ value: '', label: 'All' }, { value: 'PL', label: 'PL' }, { value: 'EUR', label: 'Europe' }, { value: 'CHAMP', label: 'Champ.' }]} /></Field>
+      <Field label="League"><Segmented size="sm" value={v.league ?? ''} onChange={(x) => set('league', x)} options={[{ value: '', label: 'All' }, { value: 'PL', label: 'PL' }, { value: 'EUR', label: 'Europe' }, { value: 'CHAMP', label: 'Champ.' }, { value: 'WORLD', label: 'World' }]} /></Field>
+      <Field label="Young talents"><Segmented size="sm" value={v.prospects ?? ''} onChange={(x) => set('prospects', x)} options={[{ value: '', label: 'Everyone' }, { value: '1', label: 'Under-21 prospects only' }]} /></Field>
       <Field label="Preferred foot"><Segmented size="sm" value={v.foot ?? ''} onChange={(x) => set('foot', x)} options={[{ value: '', label: 'Any' }, { value: 'L', label: 'Left' }, { value: 'R', label: 'Right' }, { value: 'B', label: 'Both' }]} /></Field>
     </Sheet>
   );
@@ -245,7 +255,7 @@ export function Offers() {
                   <Card key={b.id} to={`/transfers/negotiate/${b.id}`}>
                     <div className="flex items-center gap-3">
                       <ClubCrest club={b.from} size={36} />
-                      <div className="flex-1 min-w-0"><div className="t-strong truncate">{b.from?.short} want {b.player}</div><div className="t-label text-fg2">{money(b.fee)}{b.value ? ` · valued ${money(b.value)}` : ''}</div></div>
+                      <div className="flex-1 min-w-0"><div className="t-strong truncate">{b.from?.short} want {b.player}</div><div className="t-label text-fg2">{money(b.fee)}{b.value ? ` · valued ${money(b.value)}` : ''}</div><PrivacyTag b={b} /></div>
                       <Badge tone={statusTone(b.status)}>{b.status}</Badge>
                     </div>
                     <div className="flex items-center gap-2 mt-2 t-label">
@@ -261,7 +271,7 @@ export function Offers() {
                 {d.outgoing.map((b) => (
                   <Link key={b.id} to={`/transfers/negotiate/${b.id}`} className="flex items-center gap-3 px-4 min-h-16 py-2 active:bg-raised">
                     <ClubCrest club={b.to} size={30} />
-                    <div className="flex-1 min-w-0"><div className="t-strong truncate">{b.player}</div><div className="t-label text-fg2 truncate">{b.to?.short ?? 'Free agent'} · {money(b.counterFee ?? b.fee)}{b.counterFee ? ' asked' : ''}</div><div className="t-label text-fg3 truncate">{b.last}</div></div>
+                    <div className="flex-1 min-w-0"><div className="t-strong truncate">{b.player}</div><div className="t-label text-fg2 truncate">{b.to?.short ?? 'Free agent'} · {money(b.counterFee ?? b.fee)}{b.counterFee ? ' asked' : ''}</div><PrivacyTag b={b} /><div className="t-label text-fg3 truncate">{b.last}</div></div>
                     <Badge tone={statusTone(b.status)}>{b.status.replace('_', ' ')}</Badge>
                   </Link>
                 ))}
@@ -272,6 +282,13 @@ export function Offers() {
       </Q>
     </Screen>
   );
+}
+
+function PrivacyTag({ b }: { b: { private: boolean; leaked: boolean } }) {
+  if (!b.private) return null;
+  return b.leaked
+    ? <div className="t-label text-warning flex items-center gap-1"><Megaphone size={12} /> Leaked to the press</div>
+    : <div className="t-label text-fg3 flex items-center gap-1"><EyeOff size={12} /> Private</div>;
 }
 
 // ---------------------------------------------------------------- negotiation
@@ -303,6 +320,12 @@ export function Negotiate() {
                   <div className="flex-1 min-w-0"><Link to={`/player/${b.playerId}`} className="t-strong">{b.player}</Link><div className="t-label text-fg2">{d.role === 'buyer' ? `From ${b.to?.short ?? 'free agency'}` : `${b.from?.short} want him`}</div></div>
                   <Badge tone={b.status === 'completed' ? 'positive' : open ? 'warning' : 'negative'}>{b.status.replace('_', ' ')}</Badge>
                 </div>
+                {b.private && (
+                  <div className={cx('mt-3 rounded-lg px-3 py-2 t-label flex items-center gap-2', b.leaked ? 'bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] text-warning' : 'bg-raised text-fg2')}>
+                    {b.leaked ? <Megaphone size={15} className="shrink-0" /> : <EyeOff size={15} className="shrink-0" />}
+                    {b.leaked ? 'These talks were meant to be private, but they leaked to the press. Everyone knows now.' : 'Private talks. Only the two clubs know about this, for now.'}
+                  </div>
+                )}
                 <div className="grid grid-cols-3 gap-2 mt-3">
                   <div><div className="t-caption text-fg3">Offer</div><div className="t-num">{money(b.fee)}</div></div>
                   <div><div className="t-caption text-fg3">Wage</div><div className="t-num">{wage(b.wage)}</div></div>
@@ -353,51 +376,113 @@ export function Negotiate() {
 // ---------------------------------------------------------------- scouting
 export function Scouting() {
   const qc = useQueryClient();
+  const toast = useToast();
+  const now = useNow(60_000);
+  const [newOpen, setNewOpen] = useState(false);
   const q = useQuery({ queryKey: ['scouting'], queryFn: () => api.get<ScoutingData>('/transfers/scouting') });
   const cancel = useMutation({ mutationFn: (pid: number) => api.post(`/players/${pid}/scout`, { on: false }), onSuccess: () => qc.invalidateQueries({ queryKey: ['scouting'] }) });
+  const stop = useMutation({ mutationFn: (id: number) => api.del(`/scouting/missions/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['scouting'] }) });
   return (
     <Screen title="Scouting" back="/transfers">
       <Q q={q} skeleton={<SkeletonList rows={5} tall />}>
-        {(d) => (
-          <>
-            <Card className="mb-4"><div className="t-body">{d.scout ? <>Chief scout <b>{d.scout.name}</b> ({d.scout.rating}/20)</> : 'No chief scout'}</div><div className="t-label text-fg2 mt-1">Your scouts can follow {d.limit} players at once. Send one from any player's profile.</div></Card>
-            <Section title={`On assignment · ${d.active.length}/${d.limit}`}>
-              {d.active.length === 0 ? <Card><div className="t-label text-fg3">No active assignments.</div></Card> : (
-                <List>
-                  {d.active.map((p) => (
-                    <div key={p.id} className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <ClubCrest club={p.club} size={28} />
-                        <Link to={`/player/${p.id}`} className="flex-1 min-w-0"><div className="t-strong truncate">{p.name}</div><div className="t-label text-fg3">{p.club?.short ?? 'Free agent'} · report in about {p.daysLeft} day{p.daysLeft > 1 ? 's' : ''}</div></Link>
-                        <button className="t-label text-fg3" onClick={() => cancel.mutate(p.id)}>Cancel</button>
+        {(d) => {
+          const running = d.missions.filter((m) => m.status === 'active').length;
+          return (
+            <>
+              <Card className="mb-4"><div className="t-body">{d.scout ? <>Chief scout <b>{d.scout.name}</b> ({d.scout.rating}/20)</> : 'No chief scout'}</div><div className="t-label text-fg2 mt-1">Send your scouts on a mission to a region to unearth young talent, or have them follow up to {d.limit} named players from their profiles. Better scouts find better players and judge them more accurately.</div></Card>
+              <Section title={`Missions · ${running}/${d.missionLimit}`} action={<Button size="sm" icon={<Globe2 size={14} />} disabled={running >= d.missionLimit} onClick={() => setNewOpen(true)}>New mission</Button>}>
+                {d.missions.length === 0 ? <Card><div className="t-label text-fg3">No missions yet. A {d.missionDays}-day trip costs {money(d.missionCost)} and brings back a report a day.</div></Card> : (
+                  <div className="space-y-2">
+                    {d.missions.map((m) => {
+                      const left = new Date(m.endsAt).getTime() - now;
+                      return (
+                        <Card key={m.id} padded={false}>
+                          <div className="flex items-center gap-3 px-4 pt-3 pb-2">
+                            <Telescope size={18} className={m.status === 'active' ? 'text-accent' : 'text-fg3'} />
+                            <div className="flex-1 min-w-0">
+                              <div className="t-strong truncate">{m.regionLabel}</div>
+                              <div className="t-label text-fg3">{m.pos ?? 'Any position'} · age {m.ageMax} or under · {m.status === 'active' ? `back in ${inWords(Math.max(0, left))}` : m.status === 'cancelled' ? 'called off' : 'finished'}</div>
+                            </div>
+                            {m.status === 'active' && <button type="button" className="t-label text-fg3" onClick={() => stop.mutate(m.id)}>Call off</button>}
+                          </div>
+                          {m.found.length === 0 ? <div className="px-4 pb-3 t-label text-fg3">{m.status === 'active' ? 'The first report arrives tomorrow.' : 'Nobody worth mentioning.'}</div> : (
+                            <div className="border-t border-subtle divide-y divide-subtle">
+                              {m.found.map((p) => (
+                                <Link key={p.id} to={`/player/${p.id}`} className="flex items-center gap-3 px-4 min-h-14 py-2 active:bg-raised">
+                                  <ClubCrest club={p.club} size={26} />
+                                  <div className="flex-1 min-w-0"><div className="t-body truncate">{p.name}</div><div className="t-label text-fg3 truncate">{p.age} · {p.pos.join('/')} · {p.club?.short ?? 'Free agent'}</div></div>
+                                  <div className="text-right"><div className="t-label capitalize" style={{ color: p.potential.hi >= 17 ? 'var(--positive)' : p.potential.hi >= 15 ? 'var(--info)' : undefined }}>{p.potential.label}</div><div className="text-[11px] text-fg3 tabular">pot. {p.potential.lo}-{p.potential.hi}</div></div>
+                                </Link>
+                              ))}
+                            </div>
+                          )}
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+              </Section>
+              <Section title={`Following · ${d.active.length}/${d.limit}`}>
+                {d.active.length === 0 ? <Card><div className="t-label text-fg3">Nobody being followed. Send a scout from any player's profile.</div></Card> : (
+                  <List>
+                    {d.active.map((p) => (
+                      <div key={p.id} className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <ClubCrest club={p.club} size={28} />
+                          <Link to={`/player/${p.id}`} className="flex-1 min-w-0"><div className="t-strong truncate">{p.name}</div><div className="t-label text-fg3">{p.club?.short ?? 'Free agent'} · report in about {p.daysLeft} day{p.daysLeft > 1 ? 's' : ''}</div></Link>
+                          <button className="t-label text-fg3" onClick={() => cancel.mutate(p.id)}>Cancel</button>
+                        </div>
+                        <Meter className="mt-2" value={p.knowledge} />
                       </div>
-                      <Meter className="mt-2" value={p.knowledge} />
-                    </div>
-                  ))}
-                </List>
-              )}
-            </Section>
-            <Section title="Reports">
-              {d.reports.length === 0 ? <Card><div className="t-label text-fg3">Finished reports land here and in your shortlist.</div></Card> : (
-                <div className="space-y-2">
-                  {d.reports.map((p) => (
-                    <Card key={p.id} to={`/player/${p.id}`}>
-                      <div className="flex items-center gap-3">
-                        <ClubCrest club={p.club} size={30} />
-                        <div className="flex-1 min-w-0"><div className="t-strong truncate">{p.name}</div><div className="t-label text-fg2">{p.age} · {p.pos.join('/')} · {p.club?.short ?? 'Free agent'}</div></div>
-                        <Badge tone={p.report.verdict === 'Sign him' ? 'positive' : p.report.verdict === 'Worth a look' ? 'info' : 'neutral'}>{p.report.verdict}</Badge>
-                      </div>
-                      <div className="t-label text-fg2 mt-2 capitalize">Potential {p.report.potential.label} ({p.report.potential.lo}-{p.report.potential.hi}) · {p.report.confidence}</div>
-                      {p.report.traits.length > 0 && <div className="flex flex-wrap gap-1 mt-1.5">{p.report.traits.map((t) => <Badge key={t} tone="info">{t}</Badge>)}</div>}
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </Section>
-          </>
-        )}
+                    ))}
+                  </List>
+                )}
+              </Section>
+              <Section title="Reports">
+                {d.reports.length === 0 ? <Card><div className="t-label text-fg3">Finished reports land here and in your shortlist.</div></Card> : (
+                  <div className="space-y-2">
+                    {d.reports.map((p) => (
+                      <Card key={p.id} to={`/player/${p.id}`}>
+                        <div className="flex items-center gap-3">
+                          <ClubCrest club={p.club} size={30} />
+                          <div className="flex-1 min-w-0"><div className="t-strong truncate">{p.name}</div><div className="t-label text-fg2">{p.age} · {p.pos.join('/')} · {p.club?.short ?? 'Free agent'}</div></div>
+                          <Badge tone={p.report.verdict === 'Sign him' ? 'positive' : p.report.verdict === 'Worth a look' ? 'info' : 'neutral'}>{p.report.verdict}</Badge>
+                        </div>
+                        <div className="t-label text-fg2 mt-2 capitalize">Potential {p.report.potential.label} ({p.report.potential.lo}-{p.report.potential.hi}) · {p.report.confidence}</div>
+                        {p.report.traits.length > 0 && <div className="flex flex-wrap gap-1 mt-1.5">{p.report.traits.map((t) => <Badge key={t} tone="info">{t}</Badge>)}</div>}
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </Section>
+              <MissionSheet open={newOpen} onClose={() => setNewOpen(false)} d={d} onStarted={() => { setNewOpen(false); toast('Scouts are on their way', 'success'); qc.invalidateQueries({ queryKey: ['scouting'] }); qc.invalidateQueries({ queryKey: ['club'] }); }} />
+            </>
+          );
+        }}
       </Q>
     </Screen>
+  );
+}
+
+function MissionSheet({ open, onClose, d, onStarted }: { open: boolean; onClose: () => void; d: ScoutingData; onStarted: () => void }) {
+  const toast = useToast();
+  const [region, setRegion] = useState('south_america');
+  const [pos, setPos] = useState('');
+  const [age, setAge] = useState('21');
+  const start = useMutation({
+    mutationFn: () => api.post<{ id: number }>('/scouting/missions', { region, pos: pos || null, ageMax: Number(age) }),
+    onSuccess: onStarted,
+    onError: (e: Error) => toast(e.message, 'error'),
+  });
+  return (
+    <Sheet open={open} onClose={onClose} title="New scouting mission" footer={<Button full loading={start.isPending} onClick={() => start.mutate()}>Send scouts · {money(d.missionCost)}</Button>}>
+      <Field label="Region"><Select value={region} onChange={setRegion} options={d.regions.map((r) => ({ value: r.key, label: r.label }))} /></Field>
+      <Field label="Position">
+        <div className="flex flex-wrap gap-2"><Chip selected={!pos} onClick={() => setPos('')}>Any</Chip>{POS_CHIPS.map((p) => <Chip key={p} selected={pos === p} onClick={() => setPos(p)}>{p}</Chip>)}</div>
+      </Field>
+      <Field label="Age"><Segmented size="sm" value={age} onChange={setAge} options={[{ value: '18', label: '18 and under' }, { value: '21', label: '21 and under' }, { value: '24', label: '24 and under' }]} /></Field>
+      <div className="t-label text-fg2 pb-2">The trip lasts {d.missionDays} days. Each day your scouts send back a report on one player they rate{d.scout && d.scout.rating >= 16 ? ', sometimes two' : ''}. Found players get a full scouting report on their profile.</div>
+    </Sheet>
   );
 }
 

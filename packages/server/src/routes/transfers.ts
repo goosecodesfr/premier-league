@@ -3,13 +3,14 @@ import { POS_LABEL, positionRating, type Pos } from '@ffm/engine';
 import { db, tx } from '../db.ts';
 import { ApiError, bad, route, type Ctx } from '../http/router.ts';
 import {
-  MAX_SQUAD, acceptanceLikelihood, assessNeeds, placeBid, respondAsBuyer, respondAsSeller, sellerTerms, termsLikelihood, transferBudget, windowOpen,
+  MAX_SQUAD, acceptanceLikelihood, assessNeeds, leakChance, placeBid, respondAsBuyer, respondAsSeller, sellerTerms, termsLikelihood, transferBudget, windowOpen,
   type BidRow,
 } from '../game/market.ts';
 import { wageBudgetWeekly } from '../game/finance.ts';
 import { attrsOf, loadPlayers, squadOf } from '../game/players.ts';
 import type { ClubRow, PlayerRow } from '../game/types.ts';
 import { clubMap, idParam, int, knowledgeOf, myClub, oneOf, optInt, playerLite, scoutAssessment, world } from './common.ts';
+import { MISSION_COST, MISSION_DAYS, REGIONS, missionLimit, startMission } from '../game/scouting.ts';
 
 async function hubData(ctx: Ctx) {
   const w = await world();
@@ -24,13 +25,14 @@ async function hubData(ctx: Ctx) {
             (select count(*)::int from scouting where club_id = $1 and assigned) scouting`, [club.id]);
   const done = await db.many<{ id: number; player_id: number; player_name: string; from_club: number | null; to_club: number | null; fee: number; kind: string; created_at: Date }>(
     `select id, player_id, player_name, from_club, to_club, fee, kind, created_at from transfers where kind in ('transfer','free') order by created_at desc limit 25`);
-  const live = await db.many<{ id: number; player_id: number; name: string; from_club: number; to_club: number | null; fee: number; status: string; updated_at: Date }>(
-    `select b.id, b.player_id, p.name, b.from_club, b.to_club, b.fee, b.status, b.updated_at from bids b join players p on p.id = b.player_id
+  const live = await db.many<{ id: number; player_id: number; name: string; from_club: number; to_club: number | null; fee: number; status: string; updated_at: Date; leaked: boolean }>(
+    `select b.id, b.player_id, p.name, b.from_club, b.to_club, b.fee, b.status, b.updated_at, b.leaked from bids b join players p on p.id = b.player_id
       where b.status in ('pending','countered','rejected') and b.to_club is not null and b.fee >= 5000000 and b.updated_at > now() - interval '3 days'
+        and (not b.private or b.leaked)
       order by b.updated_at desc limit 15`);
   const feed = [
-    ...done.map((t) => ({ kind: 'done' as const, at: new Date(t.created_at).toISOString(), playerId: t.player_id, player: t.player_name, from: t.from_club ? clubs.get(t.from_club) ?? null : null, to: t.to_club ? clubs.get(t.to_club) ?? null : null, fee: Number(t.fee), status: t.kind })),
-    ...live.map((b) => ({ kind: 'bid' as const, at: new Date(b.updated_at).toISOString(), playerId: b.player_id, player: b.name, from: b.to_club ? clubs.get(b.to_club) ?? null : null, to: clubs.get(b.from_club) ?? null, fee: Number(b.fee), status: b.status })),
+    ...done.map((t) => ({ kind: 'done' as const, at: new Date(t.created_at).toISOString(), playerId: t.player_id, player: t.player_name, from: t.from_club ? clubs.get(t.from_club) ?? null : null, to: t.to_club ? clubs.get(t.to_club) ?? null : null, fee: Number(t.fee), status: t.kind, leaked: false })),
+    ...live.map((b) => ({ kind: 'bid' as const, at: new Date(b.updated_at).toISOString(), playerId: b.player_id, player: b.name, from: b.to_club ? clubs.get(b.to_club) ?? null : null, to: clubs.get(b.from_club) ?? null, fee: Number(b.fee), status: b.status, leaked: !!b.leaked })),
   ].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 30);
   const win = w.transfer_window;
   return {
@@ -55,7 +57,7 @@ async function rowsOut(rows: (PlayerRow & { league: string | null })[], me: Club
   const short = rows.length ? new Set((await db.many<{ player_id: number }>('select player_id from shortlist where club_id = $1 and player_id = any($2)', [me.id, rows.map((r) => r.id)])).map((r) => r.player_id)) : new Set<number>();
   return rows.map((p) => {
     const k = known.find((x) => x.player_id === p.id);
-    const base = p.league === 'PL' ? 45 : p.league === 'EUR' ? 25 : 30;
+    const base = p.league === 'PL' ? 45 : p.league === 'EUR' ? 25 : p.league === 'WORLD' ? 15 : 30;
     const knowledge = Math.max(base, k?.knowledge ?? 0);
     const sa = scoutAssessment(p, knowledge, me.id);
     return { ...playerLite(p, seasonNo), club: p.club_id ? clubs.get(p.club_id) ?? null : null, potential: sa.potential, knowledge, scouting: !!k?.assigned, shortlisted: short.has(p.id) };
@@ -97,8 +99,10 @@ export async function searchData(ctx: Ctx) {
   else if (status === 'listed') where.push(`(p.flags->>'listed')::boolean is true`);
   else if (status === 'expiring') add(`p.status = 'active' and p.contract_until <= $?`, w.season_no);
   const league = q.get('league');
-  if (league && ['PL', 'EUR', 'CHAMP'].includes(league)) add('c.league = $?', league);
-  const sort = SORTS[q.get('sort') ?? 'ovr'] ?? SORTS.ovr;
+  if (league && ['PL', 'EUR', 'CHAMP', 'WORLD'].includes(league)) add('c.league = $?', league);
+  const prospects = q.get('prospects') === '1';
+  if (prospects) where.push(`p.age <= 21 and (p.pa >= 165 or (p.flags->>'prospect')::boolean is true)`);
+  const sort = SORTS[q.get('sort') ?? (prospects ? 'value' : 'ovr')] ?? SORTS.ovr;
   const page = optInt(q.get('page'), 'page', { min: 0, max: 50 }) ?? 0;
   const rows = await db.many<PlayerRow & { league: string | null }>(
     `select p.*, c.league from players p left join clubs c on c.id = p.club_id where ${where.join(' and ')} order by ${sort}, p.id limit 41 offset ${page * 40}`, params);
@@ -156,6 +160,7 @@ function bidOut(b: BidRow & { name: string }, clubs: Map<number, ReturnType<Awai
     id: b.id, playerId: b.player_id, player: b.name, from: clubs.get(b.from_club) ?? null, to: b.to_club ? clubs.get(b.to_club) ?? null : null,
     fee: Number(b.fee), counterFee: b.counter_fee ? Number(b.counter_fee) : null, wage: b.wage, years: b.years, promise: b.promise, status: b.status,
     updatedAt: new Date(b.updated_at).toISOString(), expiresAt: new Date(b.expires_at).toISOString(), last: b.thread?.[b.thread.length - 1]?.text ?? null,
+    private: !!b.private, leaked: !!b.leaked,
   };
 }
 
@@ -243,6 +248,8 @@ export async function quoteData(ctx: Ctx) {
     feeCurve, demand: base.demand, termsCurves,
     balance: me.balance, overdraft: 20_000_000, wageBill: Number(wageBill), wageBudget: wageBudgetWeekly(me),
     windowOpen: windowOpen(w), embargo: !!me.finances.embargo,
+    leakChance: Math.round(leakChance(Math.max(value, 1)) * 100),
+    unsettleRisk: !!seller && me.reputation - seller.reputation >= 3 && seller.league !== 'WORLD',
   };
 }
 export type QuoteData = Awaited<ReturnType<typeof quoteData>>;
@@ -254,10 +261,11 @@ route('POST', '/api/transfers/bid', 'user', async (ctx) => {
   const wage = int(ctx.body.wage, 'wage', { min: 500, max: 3_000_000 });
   const years = int(ctx.body.years ?? 3, 'years', { min: 1, max: 5 });
   const promise = ctx.body.promise ? oneOf(ctx.body.promise, 'promise', ['key', 'rotation', 'backup'] as const) : null;
+  const isPrivate = ctx.body.private === true;
   const bid = await tx(async (t) => {
     const w = await world(t);
     const me = await myClub(ctx, t, true);
-    return placeBid(t, w, me, playerId, { fee, wage, years, promise, by: 'user' });
+    return placeBid(t, w, me, playerId, { fee, wage, years, promise, by: 'user', private: isPrivate });
   });
   await db.q('insert into shortlist (club_id, player_id) values ($1, $2) on conflict do nothing', [bid.from_club, playerId]);
   return { bidId: bid.id, status: bid.status, respondAt: bid.respond_at ? new Date(bid.respond_at).toISOString() : null };
@@ -293,8 +301,20 @@ export async function scoutingData(ctx: Ctx) {
       where s.club_id = $1 and (s.assigned or s.knowledge >= 80) order by s.assigned desc, s.updated_at desc limit 40`, [me.id]);
   const clubs = await clubMap();
   const limit = 2 + Math.floor((me.staff.scout?.rating ?? 8) / 5);
+  const missions = await db.many<{ id: number; region: string; pos: string | null; age_max: number; started_at: Date; ends_at: Date; status: string; found: { id: number; name: string }[] }>(
+    `select * from scout_missions where club_id = $1 and (status = 'active' or ends_at > now() - interval '21 days') order by status = 'active' desc, started_at desc limit 8`, [me.id]);
+  const foundIds = [...new Set(missions.flatMap((m) => (m.found ?? []).map((f) => f.id)))];
+  const foundRows = foundIds.length ? await db.many<PlayerRow & { knowledge: number; league: string | null }>(
+    `select p.*, coalesce(s.knowledge, 30) knowledge, c.league from players p left join scouting s on s.player_id = p.id and s.club_id = $1 left join clubs c on c.id = p.club_id where p.id = any($2)`, [me.id, foundIds]) : [];
+  const foundOut = new Map(foundRows.map((r) => [r.id, { ...playerLite(r, w.season_no), club: r.club_id ? clubs.get(r.club_id) ?? null : null, knowledge: r.knowledge, potential: scoutAssessment(r, r.knowledge, me.id).potential }]));
   return {
     scout: me.staff.scout ?? null, limit,
+    missionLimit: missionLimit(me), missionCost: MISSION_COST, missionDays: MISSION_DAYS,
+    regions: Object.entries(REGIONS).map(([key, r]) => ({ key, label: r.label })),
+    missions: missions.map((m) => ({
+      id: m.id, region: m.region, regionLabel: REGIONS[m.region]?.label ?? m.region, pos: m.pos, ageMax: m.age_max, status: m.status,
+      endsAt: new Date(m.ends_at).toISOString(), found: (m.found ?? []).flatMap((f) => { const x = foundOut.get(f.id); return x ? [x] : []; }).reverse(),
+    })),
     active: rows.filter((r) => r.assigned).map((r) => ({ ...playerLite(r, w.season_no), club: r.club_id ? clubs.get(r.club_id) ?? null : null, knowledge: r.knowledge, daysLeft: Math.max(1, Math.ceil((100 - r.knowledge) / (6 + (me.staff.scout?.rating ?? 8) * 0.9))) })),
     reports: rows.filter((r) => !r.assigned).map((r) => ({ ...playerLite(r, w.season_no), club: r.club_id ? clubs.get(r.club_id) ?? null : null, report: scoutAssessment(r, r.knowledge, me.id), recommendedRole: null as string | null })),
   };
@@ -304,3 +324,21 @@ route('GET', '/api/transfers/scouting', 'user', scoutingData);
 
 void knowledgeOf;
 void bad;
+
+route('POST', '/api/scouting/missions', 'user', async (ctx) => {
+  const region = oneOf(ctx.body.region, 'region', Object.keys(REGIONS) as [string, ...string[]]);
+  const pos = ctx.body.pos ? oneOf(ctx.body.pos, 'pos', Object.keys(POS_LABEL) as [string, ...string[]]) : null;
+  const ageMax = int(ctx.body.ageMax ?? 21, 'ageMax', { min: 16, max: 30 });
+  return tx(async (t) => {
+    const w = await world(t);
+    const me = await myClub(ctx, t, true);
+    const m = await startMission(t, w, me, { region, pos, ageMax });
+    return { id: m!.id };
+  });
+});
+
+route('DELETE', '/api/scouting/missions/:id', 'user', async (ctx) => {
+  const me = await myClub(ctx);
+  await db.q(`update scout_missions set status = 'cancelled' where id = $1 and club_id = $2 and status = 'active'`, [idParam(ctx), me.id]);
+  return { ok: true };
+});

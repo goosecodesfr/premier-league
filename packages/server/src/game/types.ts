@@ -1,6 +1,7 @@
 // Server-side domain types (rows as stored in Postgres).
 import type { Familiarity, Tactic } from '@ffm/engine';
 import type { WeekdayKey } from '../lib/time.ts';
+import type { Traits } from '@ffm/engine';
 
 export type Phase = 'preseason' | 'season' | 'postseason';
 export type Difficulty = 'casual' | 'standard' | 'competitive';
@@ -154,7 +155,7 @@ export interface ClubRow {
   key: string;
   name: string;
   short: string;
-  league: 'PL' | 'EUR' | 'CHAMP';
+  league: 'PL' | 'EUR' | 'CHAMP' | 'WORLD';
   country: string;
   colors: [string, string];
   stadium: string;
@@ -193,6 +194,9 @@ export interface PlayerFlags {
   renewalAsked?: boolean;
   noRenewal?: boolean;
   newSigning?: number; // season signed
+  leakPremium?: number; // season in which a leaked bid made the seller dig in
+  unsettled?: number; // season in which transfer interest unsettled him
+  prospect?: boolean; // one of the world's top young talents (seed v2)
 }
 
 export interface PlayerRow {
@@ -228,6 +232,8 @@ export interface PlayerRow {
   form_history: number[];
   history: { season: number; club: string; apps?: number; goals?: number; fee?: number; kind?: string }[];
   joined_season: number | null;
+  traits: Traits;
+  seed_id?: number | null;
 }
 
 export interface TacticRow {

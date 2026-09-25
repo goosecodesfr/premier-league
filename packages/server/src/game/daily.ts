@@ -6,6 +6,7 @@ import { addNews } from './news.ts';
 import { notifyClub } from './notify.ts';
 import { dailyEvents } from './events.ts';
 import { botMarketDay } from './market.ts';
+import { progressMissions } from './scouting.ts';
 import type { WorldRow } from './types.ts';
 
 export async function runDaily(d: Db, world: WorldRow, now: Date) {
@@ -48,6 +49,9 @@ export async function runDaily(d: Db, world: WorldRow, now: Date) {
     await d.q('update scouting set assigned = false where club_id = $1 and player_id = $2', [r.club_id, r.player_id]);
     await notifyClub(d, r.club_id, { type: 'system', title: `Scout report ready: ${r.name}`, body: 'Your chief scout has filed his full assessment.', link: `/player/${r.player_id}` });
   }
+
+  // ---- scouting network missions
+  await progressMissions(d, world, now);
 
   // ---- facility builds
   const builds = await d.many<{ id: number; facilities: { building?: { kind: string; toLevel: number; completesAt: string; seats?: number } } }>(`select id, facilities from clubs where facilities->'building' is not null and facilities->'building' <> 'null'::jsonb`);

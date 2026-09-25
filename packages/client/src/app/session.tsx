@@ -62,7 +62,14 @@ export function RequireSession({ children }: { children: ReactNode }) {
   if (me.isPending) return <Splash />;
   if (me.error instanceof ApiError && me.error.code === 'UNAUTHENTICATED') return <Navigate to="/login" replace state={{ from: loc.pathname }} />;
   if (!data) {
-    if (me.error) return <div className="p-6 text-center t-body text-fg2">Could not reach the server. <button className="text-accent underline" onClick={() => me.refetch()}>Retry</button></div>;
+    if (me.error) return (
+      <div className="p-6 pt-16 text-center t-body text-fg2 max-w-md mx-auto">
+        <div className="t-title2 text-fg mb-2">Could not reach the game server</div>
+        <div className="mb-4 break-words">{me.error.message}</div>
+        <button className="text-accent underline" onClick={() => { void status.refetch(); void me.refetch(); }}>Retry</button>
+        <div className="t-label text-fg3 mt-6">Setting up? Open <a className="underline" href="/api/status">/api/status</a> to see the raw answer from the server.</div>
+      </div>
+    );
     return <Navigate to="/login" replace />;
   }
   if (!data.world) return <Navigate to="/setup" replace />;

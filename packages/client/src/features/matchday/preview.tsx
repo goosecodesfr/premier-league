@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Check, ChevronDown, CloudRain, Dice5, Lock, Pencil, ShieldAlert, Target, Users } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, CloudRain, Dice5, Lock, Pencil, ShieldAlert, Target, TrendingDown, TrendingUp, Users } from 'lucide-react';
 import type { OppInstructionType } from '@ffm/engine';
 import type { PreviewData } from '@ffm/server/routes/matches';
 import { api, ApiError } from '../../lib/api';
@@ -135,6 +135,27 @@ function PreviewBody({ d, fid, tacticId, setTacticId }: { d: PreviewData; fid: n
         </Card>
       </Section>
 
+      {d.battles.length > 0 && (
+        <Section title="Key battles" action={<span className="t-label text-fg3">your XI vs their likely XI</span>}>
+          <List>
+            {d.battles.map((b) => <BattleRow key={b.key} b={b} />)}
+          </List>
+        </Section>
+      )}
+
+      {d.matchup.length > 0 && (
+        <Section title="Tactical match-up">
+          <Card>
+            <div className="t-label text-fg2 mb-2">How your set-up meets theirs. These effects apply in the match engine for as long as both sides keep this shape.</div>
+            <div className="space-y-2">
+              {d.matchup.map((m, i) => (
+                <div key={i} className="flex gap-2 t-body">{m.good ? <TrendingUp size={17} className="text-positive shrink-0 mt-0.5" /> : <TrendingDown size={17} className="text-negative shrink-0 mt-0.5" />}<span>{m.text}</span></div>
+              ))}
+            </div>
+          </Card>
+        </Section>
+      )}
+
       <Section title="Tactic and plan B">
         <Card>
           <div className="t-label text-fg2 mb-1.5">Start with</div>
@@ -241,3 +262,26 @@ function PreviewBody({ d, fid, tacticId, setTacticId }: { d: PreviewData; fid: n
 }
 
 void PlayerRow;
+
+const EDGE: Record<number, { label: string; tone: 'positive' | 'info' | 'neutral' | 'warning' | 'negative' }> = {
+  2: { label: 'Big edge to you', tone: 'positive' }, 1: { label: 'Edge to you', tone: 'info' }, 0: { label: 'Even', tone: 'neutral' },
+  [-1]: { label: 'Edge to them', tone: 'warning' }, [-2]: { label: 'Big edge to them', tone: 'negative' },
+};
+
+function BattleRow({ b }: { b: PreviewData['battles'][number] }) {
+  const e = EDGE[Math.max(-2, Math.min(2, b.edge))];
+  return (
+    <div className="px-4 py-3">
+      <div className="flex items-start gap-2">
+        <span className="t-strong flex-1 min-w-0">{b.title}</span>
+        <Badge tone={e.tone} className="shrink-0 mt-0.5">{e.label}</Badge>
+      </div>
+      <div className="flex items-center gap-1 mt-2" aria-hidden>
+        {[-2, -1, 0, 1, 2].map((v) => (
+          <span key={v} className="h-1.5 flex-1 rounded-full" style={{ background: v === 0 ? 'var(--border-subtle)' : (v < 0 ? b.edge <= v : b.edge >= v) ? (v < 0 ? 'var(--negative)' : 'var(--positive)') : 'var(--bg-input)' }} />
+        ))}
+      </div>
+      <div className="t-label text-fg2 mt-1.5">{b.detail}</div>
+    </div>
+  );
+}

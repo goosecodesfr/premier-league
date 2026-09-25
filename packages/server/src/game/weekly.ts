@@ -30,6 +30,14 @@ async function developPlayers(d: Db, world: WorldRow, now: Date) {
   const mins = new Map((await d.many<{ player_id: number; m: number }>(
     `select pm.player_id, sum(pm.minutes)::int m from player_match pm join fixtures f on f.id = pm.fixture_id where f.kickoff_at > $1::timestamptz - interval '28 days' group by pm.player_id`, [now])).map((r) => [r.player_id, r.m]));
   const players = await d.many<PlayerRow>(`select id, club_id, age, positions, attrs, hidden, ca, pa, flags from players where status = 'active'`);
+  // Clubs outside the Premier League play most of their football off-screen: estimate minutes from squad rank.
+  const offscreen = new Map<number, number>();
+  const byClub = new Map<number, PlayerRow[]>();
+  for (const p of players) if (p.club_id && clubs.get(p.club_id)?.league !== 'PL') (byClub.get(p.club_id) ?? byClub.set(p.club_id, []).get(p.club_id)!).push(p);
+  for (const [clubId, list] of byClub) {
+    const world = clubs.get(clubId)?.league === 'WORLD';
+    list.sort((a, b) => b.ca - a.ca).forEach((p, i) => offscreen.set(p.id, world ? 320 : i < 13 ? 300 : i < 19 ? 140 : 40));
+  }
   const ids: number[] = [];
   const attrsOut: string[] = [];
   const cas: number[] = [];
@@ -41,7 +49,7 @@ async function developPlayers(d: Db, world: WorldRow, now: Date) {
     const inten = c?.training.intensity === 'high' ? 1.15 : c?.training.intensity === 'low' ? 0.88 : 1;
     const youthTier = p.age <= 20 ? 1 + ((c?.facilities.youth ?? 2) - 3) * 0.05 : 1;
     const trainingMult = (0.85 + tier * 0.05) * (1 + (coach - 10) * 0.02) * inten * youthTier;
-    const m = mins.get(p.id) ?? 0;
+    const m = Math.max(mins.get(p.id) ?? 0, offscreen.get(p.id) ?? 0);
     const minutesFactor = Math.min(1.2, m / 360 + (p.age <= 19 ? 0.35 : 0.1));
     const focus = c?.training.individual?.find((x) => x.playerId === p.id)?.group ?? null;
     const isGk = (p.positions.GK ?? 0) >= 0.8;

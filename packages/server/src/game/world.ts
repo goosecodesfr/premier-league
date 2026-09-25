@@ -5,7 +5,7 @@ import { db, insertMany, tx, type Db } from '../db.ts';
 import { randomToken } from '../lib/auth.ts';
 import { atTime, calDate, addDays, nextWeekday, WEEKDAY_KEYS } from '../lib/time.ts';
 import { ARCHETYPES, acumenFor, archetypeTactics, newManager } from './archetypes.ts';
-import { loadSeed, namePools } from './seed.ts';
+import { loadSeed, namePools, type SeedPlayer } from './seed.ts';
 import { valueOf, toSelectable } from './players.ts';
 import {
   DEFAULT_SETTINGS, type Archetype, type ClubFinances, type Facilities, type PlayerRow, type Staff, type StaffRole,
@@ -96,7 +96,7 @@ export async function createWorld(opts: CreateWorldOpts): Promise<void> {
        values (1, $1, $2, 1, $3, 'preseason', $4, $5, $6, $7)`,
       [opts.name, opts.timezone, seedSeasonLabel(seed.season), JSON.stringify(settings), secret,
         JSON.stringify({ open: true, kind: 'preseason', closesAt: null, opensAt: null }),
-        JSON.stringify({ vapidPublic: vapid.publicKey, started: false })],
+        JSON.stringify({ vapidPublic: vapid.publicKey, started: false, dataVersion: seed.upgrades?.v2 ? SEED_DATA_VERSION : 1 })],
     );
     await t.q(`insert into seasons (season_no, label) values (1, $1)`, [seedSeasonLabel(seed.season)]);
 
@@ -124,18 +124,13 @@ export async function createWorld(opts: CreateWorldOpts): Promise<void> {
     for (const p of seed.players) {
       const clubId = p.club && p.club !== 'RES' ? clubIds.get(p.club) ?? null : null;
       const status = p.club === 'RES' ? 'reserve' : clubId ? 'active' : 'free';
-      const wage = Math.round((p.wage * (clubId ? WAGE_SCALE : 1.2)) / 500) * 500;
-      const contract = clubId ? Math.max(1, p.cy) : 0;
-      const value = valueOf({ ca: p.ca, pa: p.pa, age: p.age, contract_until: contract || 2, form: 1, positions: p.pos }, 1);
-      pRows.push([
-        clubId, status, p.name, p.short, p.first, p.last, p.nat, p.age, p.foot, p.h, JSON.stringify(p.pos), p.a, p.hd, p.ca, p.pa,
-        100, clubId ? 80 + rng.int(0, 15) : 60, 1, 1, 0, wage, contract, p.no, value, '{}', '[]', '[]', clubId ? 1 : null,
-      ]);
+      pRows.push(seedPlayerRow(p, clubId, status, rng));
     }
-    await insertMany(t, 'players', ['club_id', 'status', 'name', 'short', 'first_name', 'last_name', 'nat', 'age', 'foot', 'height', 'positions', 'attrs', 'hidden', 'ca', 'pa', 'condition', 'sharpness', 'form', 'morale', 'fatigue_debt', 'wage', 'contract_until', 'squad_number', 'value', 'flags', 'form_history', 'history', 'joined_season'], pRows, '', 400);
+    await insertMany(t, 'players', SEED_PLAYER_COLS, pRows, '', 400);
 
-    // ---- tactics with a default XI for every club
-    await createDefaultTactics(t, [...clubIds.values()]);
+    // ---- tactics with a default XI for every club that plays matches
+    const playing = new Set(seed.clubs.filter((c) => c.league !== 'WORLD').map((c) => c.key));
+    await createDefaultTactics(t, [...clubIds.entries()].filter(([k]) => playing.has(k)).map(([, id]) => id));
 
     // ---- recurring jobs
     await scheduleRecurring(t, settings, opts.timezone, now);
@@ -145,6 +140,23 @@ export async function createWorld(opts: CreateWorldOpts): Promise<void> {
       'The pre-season transfer window is open. Pick a club, sign players and get your tactics ready. The season starts when the league admin says go.',
     ]);
   });
+}
+
+export const SEED_PLAYER_COLS = ['club_id', 'status', 'name', 'short', 'first_name', 'last_name', 'nat', 'age', 'foot', 'height', 'positions', 'attrs', 'hidden', 'ca', 'pa', 'condition', 'sharpness', 'form', 'morale', 'fatigue_debt', 'wage', 'contract_until', 'squad_number', 'value', 'flags', 'form_history', 'history', 'joined_season', 'traits', 'seed_id'];
+/** Bumped whenever the seed gains data that existing leagues should receive (see upgrade.ts). */
+export const SEED_DATA_VERSION = 2;
+
+/** One players-table row from a seed player (column order = SEED_PLAYER_COLS). */
+export function seedPlayerRow(p: SeedPlayer, clubId: number | null, status: string, rng: Rng, seasonNo = 1): unknown[] {
+  const wage = Math.round((p.wage * (clubId ? WAGE_SCALE : 1.2)) / 500) * 500;
+  const contract = clubId ? Math.max(1, p.cy) + seasonNo - 1 : 0;
+  const value = valueOf({ ca: p.ca, pa: p.pa, age: p.age, contract_until: contract || seasonNo + 1, form: 1, positions: p.pos }, seasonNo);
+  const flags = p.wk ? { prospect: true } : {};
+  return [
+    clubId, status, p.name, p.short, p.first, p.last, p.nat, p.age, p.foot, p.h, JSON.stringify(p.pos), p.a, p.hd, p.ca, p.pa,
+    100, clubId ? 80 + rng.int(0, 15) : 60, 1, 1, 0, wage, contract, p.no, value, JSON.stringify(flags), '[]', '[]', clubId ? seasonNo : null,
+    JSON.stringify(p.tr ?? {}), p.sid,
+  ];
 }
 
 function seedSeasonLabel(s: string): string {

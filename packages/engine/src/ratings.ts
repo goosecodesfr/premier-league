@@ -28,8 +28,17 @@ export function roleRating(
   const base = rawRoleRating(a, role, duty);
   const mult = stateMultiplier(opts.form ?? 1, opts.morale ?? 1, opts.sharpness ?? 90);
   let fam = 1;
-  if (opts.pos && opts.familiarity) fam = Math.max(0.55, opts.familiarity[opts.pos] ?? 0);
+  if (opts.pos && opts.familiarity) fam = familiarityFactor(opts.familiarity[opts.pos] ?? (opts.pos === 'GK' ? 0.05 : 0.3), opts.pos === 'GK');
   return base * mult * fam;
+}
+
+/**
+ * How much of his ability a player brings to a position he knows this well. The match engine scales
+ * every one of his match composites by exactly this, so ratings shown in the UI match what happens.
+ */
+export function familiarityFactor(fam: number, gkSlot = false): number {
+  if (gkSlot && fam < 0.5) return 0.55;
+  return 0.72 + 0.28 * Math.max(0.25, Math.min(1, fam));
 }
 
 /** Rating of the player's best role at a given position (default duty). */

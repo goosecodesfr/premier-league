@@ -4,8 +4,8 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowLeft, Check, ChevronDown, ChevronUp, Crown, Move, Plus, RotateCcw, Search, Wand2, X } from 'lucide-react';
 import {
-  FORMATIONS, FORMATION_KEYS, ROLES, attrsFromArray, detectFormation, displayAttr, displayRating, lineupWarnings, posFromXY, roleRating, rolesForPosition,
-  defaultRoleForPosition, normaliseTactic, type Attributes, type Duty, type FormationKey, type Pos, type Tactic, type TacticSlot,
+  FORMATIONS, FORMATION_KEYS, ROLES, analyseTactic, attrsFromArray, detectFormation, displayAttr, displayRating, lineupWarnings, posFromXY, roleRating, rolesForPosition,
+  defaultRoleForPosition, normaliseTactic, type Attributes, type Duty, type FormationKey, type Pos, type SlotAnalysis, type Tactic, type TacticSlot,
 } from '@ffm/engine';
 import type { TacticEditorData } from '@ffm/server/routes/tactics';
 import { api, ApiError } from '../../lib/api';
@@ -17,11 +17,13 @@ import { PlayerAvatar, PosBadge, Sparkline } from '../../components/domain';
 import { PitchLines } from '../../components/pitch';
 import { ShapeGlyph } from './list';
 import { InstructionsTab, SetPiecesTab, TriggersTab, type EditorPlayer } from './parts';
+import { AnalysisTab, FIT, FitLegend, PlayerInstructionsPanel } from './analysis-parts';
 import { useMe } from '../../app/session';
 
 type SquadP = TacticEditorData['squad'][number];
 interface State { data: Tactic; lineup: number[]; bench: number[]; captainId: number | null }
 type From = { kind: 'slot' | 'bench'; index: number };
+type SheetTab = 'player' | 'role' | 'instr';
 
 const BENCH_MAX = 9;
 /** Formation y (3..90, own goal -> their goal) to a top offset on the pitch, and back. */
@@ -61,7 +63,7 @@ function reassign(slots: TacticSlot[], ids: number[], squad: Map<number, SquadP>
 export function TacticEditor() {
   const { id } = useParams();
   const [params, setParams] = useSearchParams();
-  const tab = (params.get('tab') ?? 'shape') as 'shape' | 'instructions' | 'setpieces' | 'triggers';
+  const tab = (params.get('tab') ?? 'shape') as 'shape' | 'analysis' | 'instructions' | 'setpieces' | 'triggers';
   const fixtureId = params.get('fixture');
   const q = useQuery({ queryKey: ['tactic', Number(id)], queryFn: () => api.get<TacticEditorData>(`/tactics/${id}`), staleTime: 0 });
   return (
@@ -79,7 +81,8 @@ function Editor({ d, tab, setTab, fixtureId }: { d: TacticEditorData; tab: strin
   const [st, setSt] = useState<State>(() => ({ data: d.tactic.data, lineup: [...d.tactic.lineup, ...new Array(11).fill(-1)].slice(0, 11), bench: d.tactic.bench.slice(0, BENCH_MAX), captainId: d.tactic.captainId }));
   const [meta, setMeta] = useState({ familiarity: d.tactic.familiarity, savedAt: null as string | null, saving: false, dirty: false });
   const [shapeMode, setShapeMode] = useState(false);
-  const [sheet, setSheet] = useState<{ from: From; tab: 'player' | 'role' } | null>(null);
+  const [sheet, setSheet] = useState<{ from: From; tab: SheetTab } | null>(null);
+  const [ring, setRing] = useState<'fit' | 'cond'>('fit');
   const [formationOpen, setFormationOpen] = useState(false);
   const [warnOpen, setWarnOpen] = useState(false);
   const [benchPick, setBenchPick] = useState(false);
@@ -124,6 +127,9 @@ function Editor({ d, tab, setTab, fixtureId }: { d: TacticEditorData; tab: strin
   const strength = filled.length ? filled.reduce((s, r) => s + r, 0) / filled.length : 0;
   const xiPlayers = st.lineup.map((pid) => squad.get(pid)).filter((p): p is SquadP => !!p);
   const avgCond = xiPlayers.length ? Math.round(xiPlayers.reduce((s, p) => s + p.condition, 0) / xiPlayers.length) : 0;
+  const analysisPlayers = useMemo(() => d.squad.map((p) => ({ id: p.id, short: p.short, attrs: attrs.get(p.id) as Attributes, fam: p.fam, traits: p.traits, condition: p.condition })), [d.squad, attrs]);
+  const analysis = useMemo(() => analyseTactic(st.data, st.lineup, analysisPlayers, { familiarity: meta.familiarity }), [st.data, st.lineup, analysisPlayers, meta.familiarity]);
+  const shortNames = useMemo(() => new Map(d.squad.map((p) => [p.id, p.name])), [d.squad]);
 
   // ---- actions
   const swap = (a: From, b: From) => update((s) => {
@@ -249,7 +255,7 @@ function Editor({ d, tab, setTab, fixtureId }: { d: TacticEditorData; tab: strin
   return (
     <Screen noPad title={<button type="button" onClick={() => setRenaming(true)} className="truncate max-w-full text-left">{st.data.name}</button>} subtitle={savedLabel} back={fixtureId ? `/fixture/${fixtureId}/preview` : '/tactics'}
       actions={fixtureId ? <Link to={`/fixture/${fixtureId}/preview`}><Button size="sm" variant="secondary" icon={<ArrowLeft size={14} />}>Match</Button></Link> : undefined}
-      header={<Tabs value={tab} onChange={setTab} tabs={[{ value: 'shape', label: 'Shape' }, { value: 'instructions', label: 'Instructions' }, { value: 'setpieces', label: 'Set pieces' }, { value: 'triggers', label: 'Triggers', count: st.data.triggers.length }]} />}>
+      header={<Tabs value={tab} onChange={setTab} tabs={[{ value: 'shape', label: 'Shape' }, { value: 'analysis', label: 'Analysis', count: analysis.notes.filter((n) => n.tone !== 'good').length }, { value: 'instructions', label: 'Instructions' }, { value: 'setpieces', label: 'Set pieces' }, { value: 'triggers', label: 'Triggers', count: st.data.triggers.length }]} />}>
       {tab === 'shape' && (
         <div className="px-4 pt-3 pb-[76px]">
           <div className="flex items-center gap-2 mb-2">
@@ -268,6 +274,8 @@ function Editor({ d, tab, setTab, fixtureId }: { d: TacticEditorData; tab: strin
               const r = xiRatings[i];
               const dropKey = `slot:${i}`;
               const dragging = ghost?.from.kind === 'slot' && ghost.from.index === i;
+              const fit = analysis.slots[i]?.fit ?? 'ok';
+              const ringColor = ring === 'fit' ? FIT[fit].color : toneVar(conditionTone(p?.condition ?? 100));
               return (
                 <div key={i} data-drop={dropKey} className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center" style={{ left: `${Math.max(9, Math.min(91, s.x))}%`, top: `${yToTop(s.y)}%`, zIndex: 2 }}>
                   <button type="button" aria-label={p ? `${p.name}, ${s.pos}, rating ${r.toFixed(1)}` : `Empty ${s.pos} slot`}
@@ -279,7 +287,7 @@ function Editor({ d, tab, setTab, fixtureId }: { d: TacticEditorData; tab: strin
                       background: p ? colors?.[0] ?? '#2A333D' : 'rgba(255,255,255,0.04)',
                       color: p ? (colors ? undefined : '#fff') : 'rgba(255,255,255,0.5)',
                       border: p ? 'none' : '2px dashed rgba(255,255,255,0.35)',
-                      boxShadow: p ? `0 0 0 3px ${toneVar(conditionTone(p.condition))}${hover === dropKey ? ', 0 0 0 7px color-mix(in srgb, var(--accent) 40%, transparent)' : ''}` : hover === dropKey ? '0 0 0 4px color-mix(in srgb, var(--accent) 40%, transparent)' : undefined,
+                      boxShadow: p ? `0 0 0 3px ${ringColor}${hover === dropKey ? ', 0 0 0 7px color-mix(in srgb, var(--accent) 40%, transparent)' : ''}` : hover === dropKey ? '0 0 0 4px color-mix(in srgb, var(--accent) 40%, transparent)' : undefined,
                     }}>
                     {p ? <span style={{ color: onDark(colors?.[0]) }}>{p.number ?? '·'}</span> : <Plus size={18} />}
                     <span className="absolute -bottom-1 -right-1 h-4 min-w-4 px-0.5 rounded bg-black/70 text-[10px] leading-4 text-white font-sans font-bold">{DUTY_ARROW[s.duty]}</span>
@@ -288,12 +296,16 @@ function Editor({ d, tab, setTab, fixtureId }: { d: TacticEditorData; tab: strin
                   </button>
                   <span className="mt-0.5 max-w-[84px] truncate px-1 rounded bg-black/55 text-[10px] font-semibold text-white leading-[14px]">
                     {p ? p.short.slice(0, 9) : s.pos}
-                    {p && <span className="ml-1 font-bold tabular" style={{ color: r >= 14 ? 'var(--positive)' : r >= 11 ? '#cfd6dc' : 'var(--warning)' }}>{r.toFixed(1)}</span>}
+                    {p && <span className="ml-1 font-bold tabular" style={{ color: ring === 'fit' ? FIT[fit].color : r >= 14 ? 'var(--positive)' : r >= 11 ? '#cfd6dc' : 'var(--warning)' }}>{r.toFixed(1)}</span>}
                   </span>
                   <span className="text-[9px] leading-3 font-semibold text-white/60">{s.role}</span>
                 </div>
               );
             })}
+          </div>
+          <div className="flex items-center gap-3 mt-2">
+            <Segmented size="sm" className="shrink-0" value={ring} onChange={setRing} options={[{ value: 'fit', label: 'Role fit' }, { value: 'cond', label: 'Fitness' }]} />
+            {ring === 'fit' ? <FitLegend /> : <span className="t-label text-fg3">Ring colour shows match fitness.</span>}
           </div>
           {/* bench */}
           <div className="flex items-center justify-between mt-3 mb-1.5">
@@ -325,6 +337,7 @@ function Editor({ d, tab, setTab, fixtureId }: { d: TacticEditorData; tab: strin
           <div className="t-label text-fg3 mt-2">Tap a player to change him, hold for his role, or drag to swap. Drop onto the bench strip to take him out.</div>
         </div>
       )}
+      {tab === 'analysis' && <div className="px-4 pt-4"><AnalysisTab a={analysis} ratings={xiRatings} names={shortNames} onSlot={(i) => { setTab('shape'); setSheet({ from: { kind: 'slot', index: i }, tab: 'role' }); }} onRole={(i, role, duty) => setSlot(i, { role, duty })} /></div>}
       {tab === 'instructions' && <div className="px-4 pt-4"><InstructionsTab t={st.data} onChange={(t) => update((s) => ({ ...s, data: t }))} /></div>}
       {tab === 'setpieces' && <div className="px-4 pt-4"><SetPiecesTab t={st.data} players={editorPlayers(st.lineup)} onChange={(t) => update((s) => ({ ...s, data: t }))} /></div>}
       {tab === 'triggers' && <div className="px-4 pt-4"><TriggersTab t={st.data} xi={editorPlayers(st.lineup)} bench={editorPlayers(st.bench)} onChange={(t) => update((s) => ({ ...s, data: t }))} /></div>}
@@ -347,6 +360,8 @@ function Editor({ d, tab, setTab, fixtureId }: { d: TacticEditorData; tab: strin
       <SlotSheet key={sheet ? `${sheet.from.kind}${sheet.from.index}` : 'none'} open={!!sheet} tab={sheet?.tab ?? 'player'} from={sheet?.from ?? null} onClose={() => setSheet(null)} st={st} squad={d.squad} rate={rate}
         onAssign={(slot, pid) => { assign(slot, pid); setSheet(null); haptic('medium'); }}
         onRole={(slot, role, duty) => setSlot(slot, { role, duty })}
+        onInstr={(slot, pi) => setSlot(slot, { pi })}
+        analysis={sheet?.from.kind === 'slot' ? analysis.slots[sheet.from.index] : undefined}
         onCaptain={(pid) => update((s) => ({ ...s, captainId: pid }))}
         onRemove={(slot) => { toBench(slot); setSheet(null); }}
         onBenchSwap={(b, slot) => { swap({ kind: 'bench', index: b }, { kind: 'slot', index: slot }); setSheet(null); }}
@@ -400,13 +415,14 @@ function onDark(bg?: string | null): string {
 
 // ---------------------------------------------------------------- slot sheet: player picker + role picker
 function SlotSheet(props: {
-  open: boolean; tab: 'player' | 'role'; from: From | null; onClose: () => void; st: State; squad: SquadP[]; colors: [string, string] | null;
+  open: boolean; tab: SheetTab; from: From | null; onClose: () => void; st: State; squad: SquadP[]; colors: [string, string] | null;
+  analysis?: SlotAnalysis; onInstr: (slot: number, pi: TacticSlot['pi']) => void;
   rate: (p: SquadP | undefined, s: Pick<TacticSlot, 'pos' | 'role' | 'duty'>) => number;
   onAssign: (slot: number, pid: number) => void; onRole: (slot: number, role: TacticSlot['role'], duty: Duty) => void; onCaptain: (pid: number) => void;
   onRemove: (slot: number) => void; onBenchSwap: (bench: number, slot: number) => void; onBenchRemove: (bench: number) => void;
 }) {
   const { from, st, squad, rate } = props;
-  const [tab, setTab] = useState<'player' | 'role'>(props.tab);
+  const [tab, setTab] = useState<SheetTab>(props.tab);
   const [term, setTerm] = useState('');
   const [line, setLine] = useState<string>('fit');
   if (!props.open || !from) return null;
@@ -447,8 +463,17 @@ function SlotSheet(props: {
   const roles = rolesForPosition(slot.pos);
   return (
     <Sheet open onClose={props.onClose} full title={<span className="flex items-center gap-2"><PosBadge pos={slot.pos} /> {ROLES[slot.role].name}</span>}>
-      <Segmented className="mb-3" value={tab} onChange={setTab} options={[{ value: 'player', label: 'Player' }, { value: 'role', label: 'Role and duty' }]} />
-      {tab === 'player' ? (
+      <Segmented className="mb-3" value={tab} onChange={setTab} options={[{ value: 'player', label: 'Player' }, { value: 'role', label: 'Role' }, { value: 'instr', label: `Instructions${slot.pi ? ` (${Object.keys(slot.pi).length})` : ''}` }]} />
+      {current && props.analysis && props.analysis.playerId === current.id && (
+        <div className="flex items-center gap-2 mb-3 rounded-lg bg-raised px-3 py-2">
+          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: FIT[props.analysis.fit].color }} />
+          <span className="t-label flex-1 min-w-0 truncate"><span className="text-fg">{current.short}</span><span className="text-fg2"> is {FIT[props.analysis.fit].phrase}, {props.analysis.famLabel.toLowerCase()} at {slot.pos}</span></span>
+          <span className="t-num">{curRating.toFixed(1)}</span>
+        </div>
+      )}
+      {tab === 'instr' ? (
+        <PlayerInstructionsPanel pi={slot.pi} gk={slot.pos === 'GK'} slot={props.analysis} onChange={(pi) => props.onInstr(slotIdx, pi)} />
+      ) : tab === 'player' ? (
         <>
           <div className="relative mb-2"><Search size={16} className="absolute left-3 top-3 text-fg3" /><input className={cx(inputCls, '!h-10 pl-9')} placeholder="Search your squad" value={term} onChange={(e) => setTerm(e.target.value)} /></div>
           <ChipRow className="mb-2">
@@ -508,6 +533,13 @@ function SlotSheet(props: {
           <div className="t-caption text-fg3 mb-2">Duty</div>
           <Segmented value={slot.duty} onChange={(v) => props.onRole(slotIdx, slot.role, v as Duty)}
             options={ROLES[slot.role].duties.map((dt) => ({ value: dt, label: dt === 'D' ? 'Defend' : dt === 'S' ? 'Support' : 'Attack' }))} />
+          {current && props.analysis?.keyAttrs.length ? (
+            <div className="mt-4">
+              <div className="t-caption text-fg3 mb-1">{ROLES[slot.role].name} relies most on</div>
+              <div className="flex flex-wrap gap-1.5">{props.analysis.keyAttrs.map((k) => <Badge key={k.key} tone={k.value >= 15 ? 'positive' : k.value >= 11 ? 'info' : 'warning'}>{k.label} {k.value}</Badge>)}</div>
+              {props.analysis.better && <button type="button" className="t-label text-accent mt-2" onClick={() => props.onRole(slotIdx, props.analysis!.better!.role, props.analysis!.better!.duty)}>He would do better as {ROLES[props.analysis.better.role].name}: {(props.analysis.better.rating / 10).toFixed(1)}</button>}
+            </div>
+          ) : null}
           <div className="h-4" />
         </>
       )}

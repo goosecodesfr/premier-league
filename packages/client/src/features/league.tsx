@@ -274,7 +274,7 @@ export function ClubProfile() {
                 <div className="min-w-0 flex-1">
                   <div className="t-title2">{d.club.name}</div>
                   <div className="t-label text-fg2">{d.stadium} · {d.capacity.toLocaleString()}</div>
-                  <div className="t-label text-fg2">{d.position ? `${d.position}${['th', 'st', 'nd', 'rd'][d.position % 10 > 3 || Math.floor(d.position / 10) === 1 ? 0 : d.position % 10]} in the league` : d.club.league === 'PL' ? 'Premier League' : d.club.league === 'EUR' ? 'European club' : 'Championship'}</div>
+                  <div className="t-label text-fg2">{d.position ? `${d.position}${['th', 'st', 'nd', 'rd'][d.position % 10 > 3 || Math.floor(d.position / 10) === 1 ? 0 : d.position % 10]} in the league` : d.club.league === 'PL' ? 'Premier League' : d.club.league === 'EUR' ? 'European club' : d.club.league === 'WORLD' ? 'Rest of the world' : 'Championship'}</div>
                 </div>
               </div>
               <div className="relative mt-3 rounded-xl bg-raised p-3">

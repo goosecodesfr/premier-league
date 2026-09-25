@@ -1,7 +1,7 @@
 // Matchday: pre-match (opposition report, selection), team sheet submission, simulation preview,
 // match summary, the replay event log, and the round summary.
 import {
-  Rng, simulateMatch, normaliseTactic, lineupWarnings, displayRating, selectTeam, OPP_INSTRUCTION_LABELS,
+  Rng, simulateMatch, normaliseTactic, lineupWarnings, displayRating, selectTeam, OPP_INSTRUCTION_LABELS, keyBattles, MatchSim,
   type MatchContext, type OppInstruction, type Tactic, type TeamInput,
 } from '@ffm/engine';
 import { db, tx, type Db } from '../db.ts';
@@ -177,7 +177,41 @@ export async function previewData(ctx: Ctx) {
   // ---- head-to-head
   const h2h = await db.many<FixtureRow & { comp_type: string; comp_name: string }>(`${FIXTURE_SELECT} where f.status = 'played' and ((f.home_id = $1 and f.away_id = $2) or (f.home_id = $2 and f.away_id = $1)) order by f.kickoff_at desc limit 5`, [club.id, opp.id]);
   const deadlinePassed = Date.now() >= new Date(f.deadline_at).getTime() || f.status !== 'scheduled';
+  // ---- key battles and the tactical match-up, from the same model the match engine uses
+  const toAP = (p: PlayerRow) => ({ id: p.id, short: p.short, attrs: attrsOf(p), fam: p.positions, traits: p.traits ?? {}, condition: p.condition });
+  let battles: ReturnType<typeof keyBattles> = [];
+  let matchup: { good: boolean; text: string }[] = [];
+  try {
+    battles = keyBattles({ tactic: sel.tactic, lineup: sel.lineup, players: mySquad.map(toAP) }, { tactic: predicted.tactic, lineup: predicted.lineup, players: oppSquad.map(toAP) });
+    const mine = buildInput(club, mySquad, { ...sel, planB: null, opp: [] }, sel.familiarity, false);
+    const theirs = buildInput(opp, oppSquad, predicted, 0.8, opp.manager_type === 'bot');
+    const homeIsMe = f.home_id === club.id;
+    const sim = new MatchSim(homeIsMe ? mine : theirs, homeIsMe ? theirs : mine, {
+      seed: `matchup:${f.id}`, competition: 'league', importance: 1, neutral: f.neutral, homeAdvantage: 4, derby: false, weather: 'clear', knockout: false, maxSubs: 5,
+    });
+    const mySide = homeIsMe ? 0 : 1;
+    matchup = sim.modifiers.map((m) => {
+      const ben = m.side === mySide ? 'Your' : 'Their';
+      const other = m.side === mySide ? 'their' : 'your';
+      const t: Record<string, string> = {
+        high_line_vs_pace: `${other === 'their' ? 'Their' : 'Your'} high line invites balls in behind for ${ben.toLowerCase()} quick forwards.`,
+        deep_vs_patient: `${ben} patient passing should pick holes in ${other} deep block and create chances from distance.`,
+        press_break: `${ben} composed defenders can play through ${other} all-out press.`,
+        narrow_vs_width: `${other === 'their' ? 'They' : 'You'} play narrow, leaving space out wide for ${ben.toLowerCase()} wide players.`,
+        wide_vs_central: `${other === 'their' ? 'They' : 'You'} stretch wide, so ${ben.toLowerCase()} team can overload the middle.`,
+        man_vs_roamers: `${ben} roaming players will drag ${other} man-markers out of position.`,
+        trap_vs_late_runs: `Late runs from ${ben.toLowerCase()} midfield make ${other} offside trap a gamble.`,
+        counter_smothered: `${ben} counter-press and patience should starve ${other} counter-attacks.`,
+        style_tempo: `${ben} slower tempo means more of the ball, at the cost of more transitions.`,
+        style_aggression: `${ben} intensity without the ball should set the tone.`,
+      };
+      return { good: m.side === mySide, text: t[m.key] ?? m.cause };
+    });
+  } catch (e) {
+    console.error('matchup analysis failed', e);
+  }
   return {
+    battles, matchup,
     fixture: { ...lite, venue: f.neutral ? 'Neutral venue' : home.stadium, firstLeg, isHome: f.home_id === club.id, weather: weatherFor(f.seed, new Date(f.kickoff_at)) },
     deadlinePassed,
     opponent: {

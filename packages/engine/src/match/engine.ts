@@ -3,11 +3,12 @@
 // structured log from which commentary, stats, ratings and analysis are all derived.
 import { ATTR_KEYS, MENTAL, PHYSICAL, type AttrKey } from '../attributes.ts';
 import { POS_LINE, type Pos } from '../positions.ts';
-import { COMPOSITES, COMPOSITE_KEYS, stateMultiplier, rawRoleRating, type CompositeKey } from '../ratings.ts';
+import { COMPOSITES, COMPOSITE_KEYS, stateMultiplier, rawRoleRating, familiarityFactor, type CompositeKey } from '../ratings.ts';
 import { Rng, clamp, logit, sigmoid } from '../rng.ts';
 import { ROLES, type ActionType, type RoleKey, type Duty, dutyIndex } from '../roles.ts';
 import { detectFormation } from '../formations.ts';
-import type { Instructions, Tactic, TacticSlot, Trigger } from '../tactics.ts';
+import type { Instructions, PlayerInstructions, Tactic, TacticSlot, Trigger } from '../tactics.ts';
+import { traitPower, type TraitKey } from '../traits.ts';
 import { computeInteraction, type TeamMods, type TeamProfile } from './interaction.ts';
 import { ZONES, attackPresence, bandOf, chanOf, defencePresence, mirror, zoneOf } from './presence.ts';
 import { renderCommentary, ZONE_PHRASE } from './commentary.ts';
@@ -67,6 +68,20 @@ interface PS {
   hardTackled: number;
   st: PlayerMatchStat;
   isGk: boolean;
+  /** Trait powers (0 absent, 1 normal, 1.6 elite). */
+  tr: Partial<Record<TraitKey, number>>;
+  pi: PlayerInstructions;
+  duelsLost: number;
+}
+
+/** Per-side counters behind the post-match decision report. */
+interface DecisionCounters {
+  highWins: number;
+  oppPassesOwn60: number;
+  defActionsHigh: number;
+  throughFaced: number;
+  throughFacedDone: number;
+  spXg: number;
 }
 
 interface TS {
@@ -99,6 +114,7 @@ interface TS {
   famTeam: number;
   pressureChains: number;
   lastSubMinute: number;
+  dec: DecisionCounters;
 }
 
 interface Chain {
@@ -133,7 +149,7 @@ const emptyPlayerStat = (p: MatchPlayerInput, side: 0 | 1, pos: string, role: st
   dribbles: 0, dribblesCompleted: 0, crosses: 0, crossesCompleted: 0, tackles: 0, tacklesWon: 0, interceptions: 0,
   clearances: 0, aerialsWon: 0, fouls: 0, fouled: 0, offsides: 0, saves: 0, conceded: 0, errors: 0, bigChancesMissed: 0,
   yellow: 0, red: false, conditionEnd: p.condition, injured: false, touches: 0, zoneTouches: new Array(ZONES).fill(0),
-  penaltiesScored: 0, penaltiesMissed: 0, ownGoals: 0,
+  penaltiesScored: 0, penaltiesMissed: 0, ownGoals: 0, traitMoments: {}, fam: 1, pressures: 0, progressive: 0,
 });
 
 // Base action weights by band (attacking perspective): short, long, through, dribble, cross, shoot, hold
@@ -233,7 +249,10 @@ export class MatchSim {
         injured: false, perf, famFactor: 1, famRaw: 1, basePhys, baseMent, baseTech, comp: new Float64Array(NC),
         presAtt: new Float64Array(ZONES), presDef: new Float64Array(ZONES), inv: 1, dinv: 1, marked: 0, weakFoot: 0, hardTackled: 0,
         st: emptyPlayerStat(p, side, s?.pos ?? '', s?.role ?? '', slot >= 0, 0), isGk: s?.pos === 'GK',
+        tr: Object.fromEntries(Object.entries(p.traits ?? {}).map(([k, v]) => [k, traitPower(v)])) as Partial<Record<TraitKey, number>>,
+        pi: s?.pi ?? {}, duelsLost: 0,
       };
+      if (s) ps.st.fam = Math.round((p.fam[s.pos] ?? (s.pos === 'GK' ? 0.05 : 0.3)) * 100) / 100;
       return ps;
     };
     inp.lineup.forEach((id, slot) => {
@@ -251,6 +270,7 @@ export class MatchSim {
       momentum: 0, goals: 0, stats: emptyStats(), fired: new Set(), planBUsed: false, formationKey: tactic.formation, oppChanged: false,
       recentShots: 0, recentBig: 0, recentGoals: 0, possessionTime: 0, finalThirdTime: 0,
       famTeam: clamp(inp.familiarity, 0, 1), pressureChains: 0, lastSubMinute: -10,
+      dec: { highWins: 0, oppPassesOwn60: 0, defActionsHigh: 0, throughFaced: 0, throughFacedDone: 0, spXg: 0 },
     };
     return t;
   }
@@ -268,14 +288,16 @@ export class MatchSim {
       ps.duty = s.duty;
       ps.pos = s.pos;
       ps.isGk = s.pos === 'GK';
+      ps.pi = s.pi ?? {};
       ps.famRaw = ps.p.fam[s.pos] ?? (ps.isGk ? 0.05 : 0.3);
-      ps.famFactor = 0.78 + 0.22 * Math.max(0.3, ps.famRaw);
-      if (ps.isGk && (ps.p.fam.GK ?? 0) < 0.5) ps.famFactor = 0.55;
+      // Out of position costs a lot: a natural plays at 100%, an accomplished player ~96%, an unconvincing one ~80%.
+      ps.famFactor = familiarityFactor(ps.isGk ? ps.p.fam.GK ?? 0 : ps.famRaw, ps.isGk);
       this.recomputeComposites(ps);
       ps.presAtt.fill(0);
       ps.presDef.fill(0);
-      const activity = clamp(0.78 + (ps.p.attrs.workRate - 100) / 400 + (Math.min(ps.cond, 85) - 70) / 600, 0.65, 1.12);
-      const params = { slot: s, role: s.role, duty: s.duty, mentality: t.mentality, ins: t.ins, activity };
+      const pressAdj = ps.pi.press === 'more' ? 1.12 : ps.pi.press === 'less' ? 0.88 : 1;
+      const activity = clamp((0.78 + (ps.p.attrs.workRate - 100) / 400 + (Math.min(ps.cond, 85) - 70) / 600) * pressAdj, 0.6, 1.25);
+      const params = { slot: s, role: s.role, duty: s.duty, mentality: t.mentality, ins: t.ins, activity, pi: ps.pi, fam: ps.isGk ? 1 : ps.famRaw };
       attackPresence(params, ps.presAtt);
       defencePresence(params, ps.presDef);
       const r = ROLES[s.role];
@@ -380,6 +402,20 @@ export class MatchSim {
     return b;
   }
 
+  /** Patient build-up pulls the opposition out of shape: bonus for passes that follow a long spell of possession. */
+  patience(att: TS, chain: Chain): number {
+    const style = (att.ins.passing === 'short' ? 1 : 0) + (att.ins.tempo === 'slow' ? 1 : 0);
+    return Math.min(1.5 + style * 1.5, chain.passes * (0.22 + style * 0.2));
+  }
+
+  /** Foul tendency from traits and tackling instructions (1 = neutral). */
+  foulProne(ps: PS): number {
+    let f = (1 + 0.35 * (ps.tr.slide_tackle ?? 0)) * (1 - 0.25 * (ps.tr.jockey ?? 0)) * (1 - 0.15 * (ps.tr.anticipate ?? 0));
+    if (ps.pi.tackling === 'hard') f *= 1.35;
+    else if (ps.pi.tackling === 'careful') f *= 0.65;
+    return Math.max(0.3, f);
+  }
+
   pickWeighted(list: PS[], w: (p: PS) => number): PS | null {
     if (!list.length) return null;
     const ws = list.map(w);
@@ -418,8 +454,9 @@ export class MatchSim {
     const inten = { low: 0.82, normal: 1, high: 1.1, all_out: 1.2 }[def.ins.press];
     const tired = def.onPitch.reduce((s, p) => s + p.cond, 0) / Math.max(1, def.onPitch.length);
     const fatigue = tired < 70 ? (tired / 70) : 1;
-    const spread = trig === 'always' ? 0.7 : 1;
-    return inRegion ? 1 + (inten - 1) * fatigue * spread : 0.92;
+    const spread = trig === 'always' ? 0.6 : 1;
+    // Outside the pressing zone the team sits off; a low block concedes the ball more cheaply there.
+    return inRegion ? 1 + (inten - 1) * fatigue * spread : def.ins.press === 'low' ? 0.9 : 0.95;
   }
 
   touch(ps: PS, zone: number) {
@@ -576,9 +613,11 @@ export class MatchSim {
       const long = ins.gkDistribution === 'long' ? 1.6 : ins.gkDistribution === 'short' ? 0.35 : 0.9;
       return this.rng.chance((0.28 * long) / (0.28 * long + 0.72)) ? 'long' : 'short';
     }
+    // A player out of position only half-understands what the role asks of him.
+    const roleGrip = Math.min(famW, clamp(a.famRaw / 0.75, 0.35, 1));
     for (let i = 0; i < ACTIONS.length; i++) {
       const tend = role.tend[ACTIONS[i]] ?? 1;
-      w[i] *= 1 + (tend - 1) * famW;
+      w[i] *= 1 + (tend - 1) * roleGrip;
     }
     // Cross only from wide areas; shooting from the box centre is favoured.
     if (!wide) w[4] *= 0.12;
@@ -597,9 +636,9 @@ export class MatchSim {
     w[6] *= q('hold');
     // Instructions
     if (ins.passing === 'short') { w[0] *= 1.25; w[1] *= 0.55; w[2] *= 0.9; }
-    if (ins.passing === 'direct') { w[1] *= 1.6; w[2] *= 1.1; w[0] *= 0.85; }
-    if (ins.tempo === 'high') { w[0] *= 0.86; w[2] *= 1.2; w[3] *= 1.1; w[5] *= 1.1; }
-    if (ins.tempo === 'slow') { w[0] *= 1.25; w[2] *= 0.85; if (b < 5) w[5] *= 0.9; }
+    if (ins.passing === 'direct') { w[1] *= 1.5; w[2] *= 1.1; w[0] *= 0.85; }
+    if (ins.tempo === 'high') { w[0] *= 0.88; w[2] *= 1.12; w[3] *= 1.05; w[5] *= 1.05; }
+    if (ins.tempo === 'slow') { w[0] *= 1.2; w[2] *= 0.92; }
     if (b <= 1) {
       if (ins.playOutOfDefence) { w[0] *= 1.35; w[1] *= 0.5; } else w[1] *= 1.2;
     }
@@ -623,6 +662,37 @@ export class MatchSim {
     if (lead < 0 && this.absMinute() >= 75) { w[5] *= 1.3; w[4] *= 1.2; w[2] *= 1.2; w[1] *= 1.2; }
     // Inverted winger cutting in on the strong foot
     if (a.role === 'IW' && ((ch === 0 && a.p.foot === 'R') || (ch === 2 && a.p.foot === 'L')) && b >= 4) { w[5] *= 1.3; w[3] *= 1.2; }
+    // Mentality: attacking sides take more risks in possession.
+    if (t.mentality) { const m = t.mentality; w[5] *= 1 + 0.08 * m; w[2] *= 1 + 0.08 * m; w[3] *= 1 + 0.05 * m; w[0] *= 1 - 0.04 * m; }
+    // Regaining the ball: counter at once, or keep it and build again.
+    if (chain.actions <= 2 && !chain.counter && chain.origin === 'open') {
+      if (ins.regainDistribution === 'possession') { w[0] *= 1.35; w[1] *= 0.6; w[2] *= 0.7; }
+      else if (ins.regainDistribution === 'slow') { w[0] *= 1.15; w[2] *= 0.85; }
+    }
+    // Individual instructions
+    const pi = a.pi;
+    if (pi.shooting === 'more') w[5] *= b === 4 ? 1.9 : 1.45;
+    else if (pi.shooting === 'less') w[5] *= b === 5 && ch === 1 ? 0.75 : 0.45;
+    if (pi.dribbling === 'more') w[3] *= 1.65;
+    else if (pi.dribbling === 'less') w[3] *= 0.45;
+    if (pi.passing === 'risky') { w[2] *= 1.7; w[1] *= 1.15; w[0] *= 0.88; }
+    else if (pi.passing === 'safe') { w[0] *= 1.25; w[2] *= 0.45; w[1] *= 0.7; }
+    if (pi.crossing === 'more') w[4] *= 1.75;
+    else if (pi.crossing === 'less') w[4] *= 0.35;
+    // Signature traits shape what he tries
+    const tr = a.tr;
+    if (tr.finesse_shot && b === 4) w[5] *= 1 + 0.4 * tr.finesse_shot;
+    if (tr.power_shot && b === 4) w[5] *= 1 + 0.4 * tr.power_shot;
+    if (tr.incisive_pass) w[2] *= 1 + 0.35 * tr.incisive_pass;
+    if (tr.inventive) { w[2] *= 1 + 0.15 * tr.inventive; w[3] *= 1 + 0.1 * tr.inventive; }
+    if (tr.technical) w[3] *= 1 + 0.2 * tr.technical;
+    if (tr.trickster) w[3] *= 1 + 0.25 * tr.trickster;
+    if (tr.rapid && (b <= 3 || chain.counter)) w[3] *= 1 + 0.25 * tr.rapid;
+    if (tr.whipped_pass && wide) w[4] *= 1 + 0.25 * tr.whipped_pass;
+    if (tr.long_ball_pass) w[1] *= 1 + 0.25 * tr.long_ball_pass;
+    if (tr.pinged_pass) w[1] *= 1 + 0.15 * tr.pinged_pass;
+    if (tr.tiki_taka) w[0] *= 1 + 0.12 * tr.tiki_taka;
+    if (tr.gamechanger && (this.absMinute() >= 70 || this.score[t.side] < this.score[1 - t.side])) { w[5] *= 1 + 0.25 * tr.gamechanger; w[3] *= 1 + 0.15 * tr.gamechanger; }
     const i = this.rng.weighted(w);
     return ACTIONS[i < 0 ? 0 : i];
   }
@@ -643,12 +713,14 @@ export class MatchSim {
   turnover(def: TS, zoneAttPersp: number, winner: PS | null, chain: Chain, why: 'int' | 'tackle' | 'loose'): Outcome {
     const att = this.teams[1 - def.side];
     const z = mirror(zoneAttPersp);
+    if (why !== 'loose' && bandOf(zoneAttPersp) <= 3) def.dec.defActionsHigh++;
+    if (why !== 'loose' && bandOf(zoneAttPersp) <= 2) def.dec.highWins++;
     // Counter-press: the side that lost it tries to win it straight back.
     if (att.ins.counterPress && why !== 'loose') {
       const presser = this.pickDefender(att, zoneAttPersp, 'press');
       const inten = { low: 0.6, normal: 0.85, high: 1, all_out: 1.15 }[att.ins.press];
       if (presser && winner) {
-        const p = 0.13 * inten * sigmoid(K * QS * (presser.comp[CI.press] - winner.comp[CI.composureC]));
+        const p = 0.13 * inten * sigmoid(K * QS * (presser.comp[CI.press] + 6 * (presser.tr.relentless ?? 0) - winner.comp[CI.composureC] - 8 * (winner.tr.press_proven ?? 0)));
         presser.cond -= 0.15;
         if (this.rng.chance(p)) {
           att.stats.pressWins++;
@@ -664,11 +736,12 @@ export class MatchSim {
     }
     // Counter-attack chance for the side that has just won it.
     let origin: ChanceOrigin = 'open';
-    if (def.ins.counter || this.rng.chance(0.15)) {
+    {
       const committed = bandOf(zoneAttPersp) >= 3 ? 1 : 0.35;
-      const attackersForward = att.mentality >= 1 ? 1.3 : att.mentality <= -1 ? 0.7 : 1;
-      let pc = 0.19 * committed * attackersForward * def.mods.counterMult * att.mods.transitionConcede;
-      if (!def.ins.counter) pc *= 0.4;
+      const attackersForward = att.mentality >= 2 ? 1.45 : att.mentality >= 1 ? 1.25 : att.mentality <= -1 ? 0.75 : 1;
+      let pc = (def.ins.counter ? 0.07 : 0.024) * committed * attackersForward * def.mods.counterMult * att.mods.transitionConcede;
+      pc *= def.ins.regainDistribution === 'quick' ? 1 : def.ins.regainDistribution === 'slow' ? 0.7 : 0.55;
+      if (winner && (winner.tr.rapid || winner.tr.pinged_pass)) pc *= 1.12;
       if (this.rng.chance(pc)) {
         origin = 'counter';
         def.stats.counters++;
@@ -740,22 +813,35 @@ export class MatchSim {
     if (long) att.stats.longBalls++;
     const defZone = mirror(dest);
     const deeper = bandOf(defZone) > 0 ? defZone - 3 : defZone;
-    const defender = this.pickWeighted(def.onPitch.filter((p) => !p.isGk), (p) => (p.presDef[defZone] + 0.7 * p.presDef[deeper] + 0.004) * p.dinv * (0.7 + p.comp[CI.intercept] / 500));
+    const defender = this.pickWeighted(def.onPitch.filter((p) => !p.isGk), (p) => (p.presDef[defZone] + 0.7 * p.presDef[deeper] + 0.004) * p.dinv * (0.7 + p.comp[CI.intercept] / 500) * (1 + 0.3 * (p.tr.intercept ?? 0)) * (p.pi.press === 'more' ? 1.15 : p.pi.press === 'less' ? 0.88 : 1));
     const pf = this.pressFactor(def, zone, chain);
     let A = long ? a.comp[CI.longPass] : a.comp[CI.pass];
-    A += (receiver.p.attrs.firstTouch - 120) * 0.08;
+    A += (receiver.p.attrs.firstTouch - 120) * 0.08 + 4 * (receiver.tr.first_touch ?? 0);
     if (a.isGk) A = a.comp[CI.gkDist];
-    let D = defender ? defender.comp[CI.intercept] * 0.6 + defender.comp[CI.press] * 0.4 : 110;
-    D += (pf - 1) * 30;
+    else if (long) A += 7 * (a.tr.long_ball_pass ?? 0) + 4 * (a.tr.pinged_pass ?? 0);
+    else A += 3 * (a.tr.tiki_taka ?? 0) + 2 * (a.tr.pinged_pass ?? 0);
+    let D = defender ? defender.comp[CI.intercept] * 0.6 + defender.comp[CI.press] * 0.4 + 8 * (defender.tr.intercept ?? 0) + 3 * (defender.tr.anticipate ?? 0) : 110;
+    if (defender && defender.pi.press === 'more' && b0 <= 2) D += 3;
+    if (def.ins.marking === 'man') D += 2;
+    // Press resistance: calm players shrug off the press.
+    const calm = Math.min(1, (a.tr.press_proven ?? 0) * 0.55 + (a.tr.tiki_taka ?? 0) * 0.35);
+    D += (pf - 1) * 40 * (1 - calm);
+    if (pf > 1 && defender) defender.st.pressures++;
+    if (b0 <= 3) def.dec.oppPassesOwn60++;
     let base = long ? 2 : b1 > b0 ? 20 : b1 === b0 ? 31 : 38;
     if (b1 === 4) base -= 4;
     if (b1 === 5) base -= 10;
     if (long && ROLES[receiver.role].tend.hold && (ROLES[receiver.role].tend.hold ?? 0) > 1.5) base += 4;
     base += att.mods.possessionBias;
     if (!long && att.ins.passing === 'short') base += 3;
-    if (!long && att.ins.tempo === 'slow') base += 2;
+    if (!long && att.ins.tempo === 'slow') base += 3;
+    // Speed and directness come at a price in accuracy.
+    if (att.ins.tempo === 'high') base -= 2.5;
+    if (long && att.ins.passing === 'direct') base -= 2;
     if (a.famRaw < 0.7) base -= (0.7 - a.famRaw) * 20;
-    const C = this.zoneBonus(att, dest, chain) + this.contextBonus(att) + chain.support;
+    if (a.pi.passing === 'safe') base += 2;
+    else if (a.pi.passing === 'risky') base -= 2;
+    const C = this.zoneBonus(att, dest, chain) + this.contextBonus(att) + chain.support + (b1 > b0 ? this.patience(att, chain) : 0);
     chain.support = 0;
     const p = sigmoid(K * (0.27 * (A - D) + C + base));
     const tempoSec = att.ins.tempo === 'high' ? 2.6 : att.ins.tempo === 'slow' ? 3.5 : 3.0;
@@ -765,12 +851,15 @@ export class MatchSim {
       att.stats.passesByThird[third][1]++;
       att.stats.zonePasses[zone][1]++;
       a.st.passesCompleted++;
+      if (b1 >= 4 && b0 < 4) a.st.progressive++;
       chain.passes++;
       chain.lastPasser = a;
       chain.lastPassType = b1 >= 5 && b0 >= 4 && chanOf(zone) !== 1 && chanOf(dest) === 1 ? 'cutback' : 'pass';
+      // A pinged pass gets there before the defence has reset.
+      if (a.tr.pinged_pass && b1 >= 3 && b1 > b0 && this.rng.chance(0.18 * a.tr.pinged_pass)) chain.transition = Math.max(chain.transition, 1);
       // Receiver clattered as he takes it: the most common source of fouls.
       if (defender && b1 >= 1 && b1 <= 4 && receiver !== a) {
-        const agg = (defender.p.attrs.aggression / 130) * (def.ins.tackling === 'hard' ? 1.3 : def.ins.tackling === 'careful' ? 0.72 : 1) * (defender.yellow ? 0.5 : 1);
+        const agg = (defender.p.attrs.aggression / 130) * (def.ins.tackling === 'hard' ? 1.3 : def.ins.tackling === 'careful' ? 0.72 : 1) * (defender.yellow ? 0.5 : 1) * this.foulProne(defender);
         if (this.rng.chance(0.024 * pf * agg * (this.ctx.derby ? 1.12 : 1))) return this.foul(att, def, defender, receiver, dest, chain, chain.counter && b1 >= 3);
       }
       if (long && b1 >= 4 && this.rng.chance(0.1 + (def.ins.offsideTrap ? 0.06 : 0))) {
@@ -787,7 +876,7 @@ export class MatchSim {
         dest = zoneOf(Math.min(5, b1 + 1), chanOf(dest));
       } else if (b0 <= 2 && b1 >= 3 && b1 > b0 && (def.ins.press === 'all_out' || def.ins.press === 'high')) {
         // Beating a high press leaves space behind it.
-        const exposed = (def.ins.press === 'all_out' ? 0.2 : 0.11) * (def.ins.pressTrigger === 'always' ? 1.2 : 1);
+        const exposed = (def.ins.press === 'all_out' ? 0.26 : 0.14) * (def.ins.pressTrigger === 'always' ? 1.25 : 1);
         if (this.rng.chance(exposed)) chain.transition = Math.max(chain.transition, 1);
       }
       return { kind: 'continue', zone: dest, actor: receiver };
@@ -811,7 +900,7 @@ export class MatchSim {
     const destChan = this.rng.weighted([0.25, 0.5, 0.25]);
     const dest = zoneOf(destBand, destChan < 0 ? 1 : destChan);
     const runners = att.onPitch.filter((p) => p !== a && !p.isGk);
-    const runner = this.pickWeighted(runners, (p) => (p.presAtt[dest] + p.presAtt[zoneOf(Math.max(0, destBand - 1), chanOf(dest))] + 0.01) * Math.pow(p.comp[CI.runner] / 140, 2)) ?? a;
+    const runner = this.pickWeighted(runners, (p) => (p.presAtt[dest] + p.presAtt[zoneOf(Math.max(0, destBand - 1), chanOf(dest))] + 0.01) * Math.pow(p.comp[CI.runner] / 140, 2) * (1 + 0.2 * ((p.tr.rapid ?? 0) + (p.tr.quick_step ?? 0)))) ?? a;
     att.stats.throughBalls++;
     att.stats.passes++;
     a.st.passes++;
@@ -823,12 +912,15 @@ export class MatchSim {
     const lineHigh = def.ins.line === 'high' || def.ins.line === 'very_high';
     const back = def.onPitch.filter((p) => POS_LINE[p.pos] === 'DEF');
     const lineDef = back.length ? back.reduce((s, p) => s + p.comp[CI.lineDef], 0) / back.length : 120;
-    const A = a.comp[CI.through] * 0.6 + runner.comp[CI.runner] * 0.4;
-    const D = lineDef * 0.55 + (defender ? defender.comp[CI.intercept] : 110) * 0.45;
+    const runnerBoost = 6 * (runner.tr.rapid ?? 0) + 3 * (runner.tr.quick_step ?? 0);
+    const A = a.comp[CI.through] * 0.6 + runner.comp[CI.runner] * 0.4 + 5 * (a.tr.incisive_pass ?? 0) + 2 * (a.tr.inventive ?? 0) + runnerBoost * 0.4;
+    const D = lineDef * 0.55 + (defender ? defender.comp[CI.intercept] + 8 * (defender.tr.intercept ?? 0) + 4 * (defender.tr.anticipate ?? 0) : 110) * 0.45;
+    def.dec.throughFaced++;
     let base = -12 + (lineHigh ? 3 : def.ins.line === 'deep' ? -6 : 0);
     const recovery = back.length ? Math.max(...back.map((p) => p.comp[CI.recovery])) : 120;
-    if (lineHigh) base += clamp((runner.comp[CI.runner] - recovery) * 0.15, -4, 8);
-    const C = this.zoneBonus(att, dest, chain) * 0.5 + this.contextBonus(att);
+    if (lineHigh) base += clamp((runner.comp[CI.runner] + runnerBoost - recovery) * 0.15, -4, 8);
+    if (a.pi.passing === 'risky') base -= 1.5;
+    const C = this.zoneBonus(att, dest, chain) * 0.5 + this.contextBonus(att) + this.patience(att, chain) * 0.6 + def.mentality * 1.2;
     const p = sigmoid(K * (QS * (A - D) + C + base));
     this.advance(3.5 + this.rng.next() * 1.5);
     if (this.rng.chance(p)) {
@@ -844,6 +936,7 @@ export class MatchSim {
         return this.deadBall(def.side, mirror(dest), 18 + this.rng.next() * 8);
       }
       att.stats.throughBallsCompleted++;
+      def.dec.throughFacedDone++;
       att.stats.passesCompleted++;
       att.stats.passesByThird[third][1]++;
       att.stats.zonePasses[zone][1]++;
@@ -852,13 +945,13 @@ export class MatchSim {
       chain.lastPasser = a;
       chain.lastPassType = 'through';
       const trapBeaten = trap || lineHigh;
-      const clean = 0.36 + (lineHigh ? 0.08 : 0) + clamp((runner.comp[CI.runner] - recovery) / 300, -0.1, 0.15);
+      const clean = 0.36 + (lineHigh ? 0.08 : 0) + clamp((runner.comp[CI.runner] + runnerBoost - recovery) / 300, -0.1, 0.15);
       if (destBand >= 5 && this.rng.chance(clean)) {
         // Clean through on goal: keeper may sweep
         const gk = def.gk;
         if (gk) {
           const sweep = def.gk?.role === 'SK' ? 1.3 : 1;
-          const pSweep = 0.16 * sweep * sigmoid(K * (gk.comp[CI.gkSweep] - runner.comp[CI.runner]));
+          const pSweep = 0.16 * sweep * (1 + 0.4 * (gk.tr.rush_out ?? 0)) * sigmoid(K * (gk.comp[CI.gkSweep] - runner.comp[CI.runner] - runnerBoost));
           if (this.rng.chance(pSweep)) {
             gk.st.saves++;
             def.stats.saves++;
@@ -890,18 +983,31 @@ export class MatchSim {
     att.stats.duels++;
     def.stats.duels++;
     let A = a.comp[CI.dribble] - a.hardTackled;
-    const D = defender ? defender.comp[CI.tackle] : 100;
+    const tr = a.tr;
+    const inSpace = b <= 3 || chain.counter || chain.transition > 0;
+    A += 5 * (tr.technical ?? 0) + 6 * (tr.trickster ?? 0) + 3 * (tr.quick_step ?? 0) + (inSpace ? 6 : 2) * (tr.rapid ?? 0) + 2 * (tr.inventive ?? 0);
+    if (tr.gamechanger && (this.absMinute() >= 70 || this.score[att.side] < this.score[def.side])) A += 5 * tr.gamechanger;
+    if (this.pressFactor(def, zone, chain) > 1) A += 3 * (tr.press_proven ?? 0);
+    let D = defender ? defender.comp[CI.tackle] : 100;
+    if (defender) {
+      const dt = defender.tr;
+      D += 7 * (dt.jockey ?? 0) + 6 * (dt.slide_tackle ?? 0) + 4 * (dt.anticipate ?? 0) + 3 * (dt.bruiser ?? 0) + 2 * (dt.enforcer ?? 0);
+      if (defender.pi.tackling === 'hard') D += 4;
+      else if (defender.pi.tackling === 'careful') D -= 3;
+      if (def.ins.marking === 'man') D += 2;
+    }
     const C = this.zoneBonus(att, zone, chain) * 0.6 + this.contextBonus(att) + chain.beatMan * 0.3;
     const p = sigmoid(K * (QS * (A - D) + C - 2));
     this.advance(3 + this.rng.next() * 1.5);
     if (defender) { defender.st.tackles++; def.stats.tackles++; }
-    const aggression = defender ? (defender.p.attrs.aggression / 130) * (def.ins.tackling === 'hard' ? 1.3 : def.ins.tackling === 'careful' ? 0.72 : 1) * (defender.yellow ? 0.5 : 1) * (this.ctx.derby ? 1.1 : 1) : 1;
+    const aggression = defender ? (defender.p.attrs.aggression / 130) * (def.ins.tackling === 'hard' ? 1.3 : def.ins.tackling === 'careful' ? 0.72 : 1) * (defender.yellow ? 0.5 : 1) * (this.ctx.derby ? 1.1 : 1) * this.foulProne(defender) : 1;
     if (this.rng.chance(p)) {
       a.st.dribblesCompleted++;
       att.stats.dribblesCompleted++;
       att.stats.duelsWon++;
       // tactical foul to stop a break?
-      if (defender && this.rng.chance((0.07 + (chain.counter ? 0.14 : 0) + (b >= 3 ? 0.03 : 0)) * aggression)) {
+      if (defender) { defender.duelsLost++; }
+      if (defender && this.rng.chance((0.07 + (chain.counter ? 0.14 : 0) + (b >= 3 ? 0.03 : 0)) * aggression * (1 + 0.3 * (tr.trickster ?? 0)))) {
         return this.foul(att, def, defender, a, zone, chain, chain.counter || b >= 4);
       }
       let nb = Math.min(5, b + 1);
@@ -912,6 +1018,7 @@ export class MatchSim {
       chain.beatMan = 8;
       chain.lastPassType = 'dribble';
       chain.lastPasser = a;
+      if (b < 4 && nb >= 4) a.st.progressive++;
       if (b >= 3 && this.crng.chance(0.3)) this.emit('dribble', att.side, 'dribble_ok', { p: a.p.short, b: defender?.p.short ?? 'his man', zone: ZONE_PHRASE(nb, nc) }, { a: a.p.id, b: defender?.p.id, z: dest });
       return { kind: 'continue', zone: dest, actor: a };
     }
@@ -931,8 +1038,8 @@ export class MatchSim {
     const defender = this.pickDefender(def, defZone, 'tackle');
     att.stats.duels++;
     def.stats.duels++;
-    const A = a.comp[CI.hold];
-    const D = defender ? defender.comp[CI.tackle] * 0.5 + defender.p.attrs.strength * 0.5 : 100;
+    const A = a.comp[CI.hold] + 6 * (a.tr.enforcer ?? 0) + 5 * (a.tr.first_touch ?? 0) + 4 * (a.tr.bruiser ?? 0);
+    const D = defender ? defender.comp[CI.tackle] * 0.5 + defender.p.attrs.strength * 0.5 + 5 * (defender.tr.bruiser ?? 0) + 4 * (defender.tr.enforcer ?? 0) : 100;
     const p = sigmoid(K * (QS * (A - D) + this.contextBonus(att) + 6));
     this.advance(4 + this.rng.next() * 3);
     if (this.rng.chance(p)) {
@@ -940,7 +1047,7 @@ export class MatchSim {
       chain.support = 6;
       return { kind: 'continue', zone, actor: this.pickAttacker(att, zone, a) ?? a };
     }
-    if (defender && this.rng.chance(0.24)) return this.foul(att, def, defender, a, zone, chain, false);
+    if (defender && this.rng.chance(0.24 * this.foulProne(defender))) return this.foul(att, def, defender, a, zone, chain, false);
     if (defender) { def.stats.duelsWon++; defender.st.tacklesWon++; defender.st.tackles++; def.stats.tackles++; def.stats.tacklesWon++; }
     return this.turnover(def, zone, defender, chain, 'tackle');
   }
@@ -953,7 +1060,7 @@ export class MatchSim {
     this.advance(3.5 + this.rng.next());
     const boxZone = zoneOf(5, 1);
     const dBox = mirror(boxZone);
-    const acc = fromSetPiece ? crosser.comp[CI.setPiece] + 6 : crosser.comp[CI.cross] - crosser.weakFoot;
+    const acc = fromSetPiece ? crosser.comp[CI.setPiece] + 6 + 9 * (crosser.tr.dead_ball ?? 0) : crosser.comp[CI.cross] - crosser.weakFoot + 9 * (crosser.tr.whipped_pass ?? 0);
     const pAcc = sigmoid(K * (QS * (acc - 150) + att.mods.crossBonus + (att.ins.width === 'wide' ? 2 : 0))) * (fromSetPiece ? 0.78 : 0.46);
     if (!this.rng.chance(pAcc)) {
       const clearer = this.pickDefender(def, dBox, 'aerialDef');
@@ -966,19 +1073,19 @@ export class MatchSim {
     att.stats.crossesCompleted++;
     crosser.st.crossesCompleted++;
     const gk = def.gk;
-    if (gk && this.rng.chance(0.2 * sigmoid(K * (gk.comp[CI.gkClaim] - 135)) * 1.6)) {
+    if (gk && this.rng.chance(0.2 * sigmoid(K * (gk.comp[CI.gkClaim] - 135)) * 1.6 * (1 + 0.5 * (gk.tr.cross_claimer ?? 0)))) {
       if (this.crng.chance(0.3)) this.emit('cross', att.side, 'cross_claim', { p: crosser.p.short, gk: gk.p.short });
       this.advance(4);
       return { kind: 'end', nextSide: def.side, zone: zoneOf(0, 1), actor: gk, origin: 'open' };
     }
     const targets = att.onPitch.filter((p) => p !== crosser && !p.isGk);
-    const target = this.pickWeighted(targets, (p) => (p.presAtt[boxZone] + p.presAtt[zoneOf(5, 0)] * 0.5 + p.presAtt[zoneOf(5, 2)] * 0.5 + 0.02) * Math.pow(p.comp[CI.headerAtt] / 130, 2.5)) ?? a;
+    const target = this.pickWeighted(targets, (p) => (p.presAtt[boxZone] + p.presAtt[zoneOf(5, 0)] * 0.5 + p.presAtt[zoneOf(5, 2)] * 0.5 + 0.02) * Math.pow(p.comp[CI.headerAtt] / 130, 2.5) * (1 + 0.25 * ((p.tr.aerial_fortress ?? 0) + (p.tr.precision_header ?? 0)))) ?? a;
     const defender = this.pickDefender(def, dBox, 'aerialDef');
     att.stats.aerials++;
     def.stats.aerials++;
     const inBoxBonus = fromSetPiece ? (att.tactic.setPieces.inBox - 5) * 2 : 0;
-    const A = target.comp[CI.headerAtt];
-    const D = defender ? defender.comp[CI.aerialDef] : 110;
+    const A = target.comp[CI.headerAtt] + 7 * (target.tr.aerial_fortress ?? 0) + 3 * (target.tr.bruiser ?? 0) + 3 * (crosser.tr.whipped_pass ?? 0);
+    const D = defender ? defender.comp[CI.aerialDef] + 8 * (defender.tr.aerial_fortress ?? 0) + 4 * (defender.tr.bruiser ?? 0) : 110;
     const pWin = sigmoid(K * (QS * (A - D) + this.zoneBonus(att, boxZone, chain) * 0.5 + inBoxBonus - 2)) * 0.75;
     if (this.rng.chance(pWin)) {
       att.stats.aerialsWon++;
@@ -1153,7 +1260,7 @@ export class MatchSim {
     att.stats.chanceOrigins.penalty++;
     taker.st.shots++;
     taker.st.xg += xg;
-    const p = clamp(sigmoid(logit(0.77) + (taker.comp[CI.penalty] - 150) * 0.012 - ((gk?.comp[CI.gkSave] ?? 100) - 150) * 0.006), 0.55, 0.92);
+    const p = clamp(sigmoid(logit(0.77) + (taker.comp[CI.penalty] - 150) * 0.012 + 0.15 * (taker.tr.dead_ball ?? 0) - ((gk?.comp[CI.gkSave] ?? 100) - 150) * 0.006), 0.55, 0.93);
     this.advance(10);
     if (this.rng.chance(p)) {
       att.stats.shotsOnTarget++;
@@ -1194,7 +1301,7 @@ export class MatchSim {
     else if (inBox) base = c === 1 ? 0.08 : 0.037;
     else if (b === 4) base = c === 1 ? 0.032 : 0.02;
     else base = 0.011;
-    let lg = logit(base) - 0.08;
+    let lg = logit(base) - 0.21;
     const skill = f.header ? a.comp[CI.headerAtt] : longShot ? a.comp[CI.longShot] : a.comp[CI.finish];
     lg += (skill - 145) * 0.004;
     if (!f.oneOnOne && !f.freeKick) {
@@ -1204,6 +1311,13 @@ export class MatchSim {
     if (chain.lastPassType === 'cutback') lg += 0.55;
     if (chain.lastPassType === 'dribble' && chain.beatMan > 0) lg += 0.3;
     if (chain.counter) lg += 0.2;
+    // Bodies behind the ball: a defensive side makes every chance harder; an attacking one leaves gaps.
+    if (!f.freeKick) lg += def.mentality < 0 ? 0.11 * def.mentality : 0.06 * def.mentality;
+    // A long spell of possession has dragged the defence around.
+    if (!f.setPiece && !f.freeKick && !chain.counter && chain.passes >= 6) {
+      const patient = att.ins.passing === 'short' || att.ins.tempo === 'slow';
+      lg += Math.min(patient ? 0.2 : 0.08, (chain.passes - 5) * (patient ? 0.035 : 0.015));
+    }
     if (f.oneOnOne) {
       lg += Math.log(att.mods.throughXg);
       if (f.trapBeaten) lg += Math.log(att.mods.trapBeatBonus);
@@ -1235,21 +1349,49 @@ export class MatchSim {
     }
     const origin: ChanceOrigin = f.freeKick || f.setPiece ? 'set_piece' : chain.counter ? 'counter' : f.header || chain.lastPassType === 'cross' ? 'cross' : chain.lastPassType === 'through' ? 'through' : chain.lastPassType === 'dribble' ? 'dribble' : longShot ? 'long_shot' : 'open';
     att.stats.chanceOrigins[origin]++;
+    if (origin === 'set_piece') att.dec.spXg += xg;
+    // --- signature traits: conversion above what the chance is worth ---
+    const tr = a.tr;
+    let conv = 1;
+    let sig: TraitKey | undefined;
+    const bump = (k: TraitKey, per: number, when: boolean) => {
+      const v = tr[k];
+      if (!v || !when) return;
+      conv *= 1 + per * v;
+      if (!sig) sig = k;
+    };
+    const wideAngle = inBox && c !== 1 && !f.header;
+    bump('dead_ball', 0.3, !!f.freeKick);
+    bump('precision_header', 0.14, !!f.header);
+    bump('chip_shot', 0.12, !!f.oneOnOne);
+    bump('finesse_shot', 0.2, !f.freeKick && (longShot || wideAngle));
+    bump('power_shot', 0.15, longShot && !f.freeKick);
+    bump('low_driven_shot', 0.08, inBox && !f.header);
+    bump('acrobatic', 0.1, !f.header && inBox && (chain.lastPassType === 'cross' || chain.lastPasser === null));
+    bump('gamechanger', 0.08, this.absMinute() >= 70 || this.score[att.side] < this.score[def.side]);
     this.advance(2 + this.rng.next() * 2);
     // --- outcome ---
     const gk = def.gk;
     const gkSave = gk ? gk.comp[CI.gkSave] : 40;
     // Keeper quality relative to a league-average keeper (composite ~145): elite ~ -10%, poor ~ +10%.
-    const gkFactor = clamp(1 - (gkSave - 145) / 400, 0.82, 1.2);
+    let gkFactor = clamp(1 - (gkSave - 145) / 400, 0.82, 1.2);
+    if (gk) {
+      const g = gk.tr;
+      if (longShot) gkFactor *= 1 - 0.08 * (g.far_reach ?? 0);
+      else if (f.oneOnOne) gkFactor *= 1 - 0.07 * (g.rush_out ?? 0);
+      else if (inBox) gkFactor *= 1 - 0.06 * (g.footwork ?? 0);
+    }
+    const blockCand = f.oneOnOne || f.freeKick ? null : this.pickDefender(def, mirror(zone), 'tackle');
     let pBlock = f.oneOnOne || f.freeKick ? 0.03 : f.header ? 0.07 : longShot ? 0.36 : 0.24 + clamp((def.presDef[mirror(zone)] - 1) * 0.06, -0.05, 0.1);
-    const pGoal = clamp((xg * gkFactor) / (1 - pBlock), 0, 0.93);
+    if (blockCand && !f.header) pBlock = Math.min(0.5, pBlock + 0.06 * (blockCand.tr.block ?? 0));
+    const pGoal = clamp((xg * gkFactor * conv) / (1 - pBlock), 0, 0.93);
     let pOn = clamp(0.33 + 1.05 * xg + (skill - 145) / 700, 0.24, 0.93);
     if (longShot) pOn *= 0.82;
     pOn = Math.max(pOn, pGoal + 0.04);
     const r = this.rng.next();
     if (r < pBlock) {
       att.stats.shotsBlocked++;
-      const blocker = this.pickDefender(def, mirror(zone), 'tackle');
+      const blocker = blockCand ?? this.pickDefender(def, mirror(zone), 'tackle');
       if (blocker) blocker.st.clearances++;
       this.emit('shot', att.side, 'shot_blocked', { p: a.p.short, b: blocker?.p.short ?? 'a defender' }, { a: a.p.id, xg, o: 'blocked', z: zone, or: origin });
       if (this.rng.chance(0.35)) return this.corner(att, def, this.rng.chance(0.5) ? 0 : 2);
@@ -1267,7 +1409,16 @@ export class MatchSim {
       att.stats.shotsOnTarget++;
       a.st.shotsOnTarget++;
       const key = f.freeKick ? 'goal_freekick' : f.header ? 'goal_header' : f.oneOnOne ? 'goal_1v1' : tapIn ? 'goal_tapin' : longShot ? 'goal_long' : chain.counter ? 'goal_counter' : assister ? 'goal_assist' : 'goal';
-      return this.goal(att, def, a, assister, xg, key, zone, origin);
+      if (sig) a.st.traitMoments[sig] = (a.st.traitMoments[sig] ?? 0) + 1;
+      if (assister) {
+        const at = assister.tr;
+        const k: TraitKey | undefined = chain.lastPassType === 'through' && at.incisive_pass ? 'incisive_pass'
+          : (chain.lastPassType === 'cross' || f.header) && at.whipped_pass ? 'whipped_pass'
+            : chain.lastPassType === 'set_piece' && at.dead_ball ? 'dead_ball'
+              : chain.lastPassType === 'through' && at.inventive ? 'inventive' : undefined;
+        if (k) assister.st.traitMoments[k] = (assister.st.traitMoments[k] ?? 0) + 1;
+      }
+      return this.goal(att, def, a, assister, xg, key, zone, origin, sig);
     }
     if (r2 < pOn) {
       att.stats.shotsOnTarget++;
@@ -1278,7 +1429,7 @@ export class MatchSim {
       this.emit('shot', att.side, key, { p: a.p.short, gk: this.gkName(def.side) }, { a: a.p.id, b: assister?.p.id, xg: round3(xg), o: 'saved', big, z: zone, or: origin });
       const rr = this.rng.next();
       if (rr < 0.28) return this.corner(att, def, c === 1 ? (this.rng.chance(0.5) ? 0 : 2) : c);
-      if (rr < 0.36) {
+      if (rr < 0.36 - 0.05 * (gk?.tr.deflector ?? 0)) {
         // rebound
         const z2 = zoneOf(5, 1);
         const reb = this.pickAttacker(att, z2, null);
@@ -1286,6 +1437,11 @@ export class MatchSim {
           const rc: Chain = { ...chain, lastPasser: null, lastPassType: null, beatMan: 0 };
           return this.doShot(att, def, reb, z2, rc, {});
         }
+      }
+      // A keeper who throws it long can start a counter straight away.
+      if (gk?.tr.far_throw && this.rng.chance(0.12 * gk.tr.far_throw)) {
+        def.stats.counters++;
+        return { kind: 'end', nextSide: def.side, zone: zoneOf(0, 1), actor: gk, origin: 'counter' };
       }
       return { kind: 'end', nextSide: def.side, zone: zoneOf(0, 1), actor: gk, origin: 'open' };
     }
@@ -1297,7 +1453,7 @@ export class MatchSim {
     return this.deadBall(def.side, zoneOf(0, 1), 22 + this.rng.next() * 12);
   }
 
-  goal(att: TS, def: TS, scorer: PS, assister: PS | null, xg: number, key: string, zone: number, origin: ChanceOrigin): Outcome {
+  goal(att: TS, def: TS, scorer: PS, assister: PS | null, xg: number, key: string, zone: number, origin: ChanceOrigin, sig?: TraitKey): Outcome {
     this.score[att.side]++;
     att.goals++;
     att.recentGoals++;
@@ -1305,7 +1461,7 @@ export class MatchSim {
     this.halfEvents.goals++;
     for (const p of def.onPitch) p.st.conceded++;
     this.emit('goal', att.side, key, { p: scorer.p.short, b: assister?.p.short, gk: this.gkName(def.side) }, {
-      a: scorer.p.id, b: assister?.p.id, xg: round3(xg), o: origin, big: true, sc: [this.score[0], this.score[1]], z: zone,
+      a: scorer.p.id, b: assister?.p.id, xg: round3(xg), o: origin, big: true, sc: [this.score[0], this.score[1]], z: zone, ...(sig ? { tr: sig } : {}),
     });
     // Momentum swing
     att.momentum = clamp(att.momentum + 0.35, -1, 1);
@@ -1339,7 +1495,8 @@ export class MatchSim {
         const r = ROLES[ps.role];
         const staminaF = clamp(1.32 - ps.p.attrs.stamina / 250, 0.5, 1.2);
         const debt = 1 + ps.p.fatigueDebt / 250;
-        const drop = 1.75 * r.workload * (ps.isGk ? 1 : pressF) * tempoF * staminaF * hot * debt;
+        const personal = (ps.pi.press === 'more' ? 1.12 : ps.pi.press === 'less' ? 0.9 : 1) * (ps.pi.movement === 'forward' ? 1.04 : 1) * (1 - 0.2 * (ps.tr.relentless ?? 0));
+        const drop = 1.75 * r.workload * (ps.isGk ? 1 : pressF) * tempoF * staminaF * hot * debt * personal;
         ps.cond = Math.max(15, ps.cond - drop * (this.period >= 3 ? 1.1 : 1));
         // injury roll
         const prone = Math.pow(ps.p.hidden.injuryProneness / 8, 0.7);
@@ -1448,6 +1605,7 @@ export class MatchSim {
     inn.st.onAt = inn.onAt;
     inn.st.pos = t.slots[slot].pos;
     inn.st.role = t.slots[slot].role;
+    inn.st.fam = Math.round((inn.p.fam[t.slots[slot].pos] ?? 0.3) * 100) / 100;
     out.st.offAt = out.offAt;
     t.subsUsed++;
     t.lastSubMinute = this.absMinute();

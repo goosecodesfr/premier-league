@@ -7,7 +7,7 @@ import {
 } from '@ffm/engine';
 
 export interface SeedClub { key: string; name: string; short: string; league: string; reputation: number; archetype: string; capacity: number }
-export interface SeedPlayer { sid: number; club: string | null; name: string; short: string; age: number; foot: 'L' | 'R' | 'B'; pos: Record<string, number>; a: number[]; hd: number[]; ca: number; pa: number }
+export interface SeedPlayer { sid: number; club: string | null; name: string; short: string; age: number; foot: 'L' | 'R' | 'B'; pos: Record<string, number>; a: number[]; hd: number[]; ca: number; pa: number; tr?: Record<string, number> }
 
 export function loadSeed() {
   const seed = JSON.parse(readFileSync(join(process.cwd(), 'data', 'seed', 'world-seed.json'), 'utf8'));
@@ -21,7 +21,7 @@ export function buildClubs(seed: ReturnType<typeof loadSeed>, league = 'PL'): HC
     const ps = seed.players.filter((p) => p.club === club.key);
     const players: MatchPlayerInput[] = ps.map((p) => ({
       id: p.sid, name: p.name, short: p.short, attrs: attrsFromArray(p.a), hidden: hiddenFromArray(p.hd), fam: p.pos,
-      foot: p.foot, age: p.age, condition: 100, sharpness: 90, form: 1, morale: 1, fatigueDebt: 0,
+      foot: p.foot, age: p.age, condition: 100, sharpness: 90, form: 1, morale: 1, fatigueDebt: 0, traits: p.tr ?? {},
     }));
     const sel: SelectablePlayer[] = players.map((p) => ({ id: p.id, attrs: p.attrs, fam: p.fam, condition: p.condition, sharpness: p.sharpness, form: p.form, morale: p.morale, age: p.age, available: true, ca: ps.find((x) => x.sid === p.id)!.ca }));
     return { club, players, sel };

@@ -99,6 +99,13 @@ export function computeInteraction(p: [TeamProfile, TeamProfile]): { mods: [Team
     if (oi.offsideTrap) m.offsideRisk += 0.08;
   }
 
+  // Width stretches the opposition's central block; a narrow side crowds its own lanes.
+  for (const side of [0, 1] as const) {
+    const w = p[side].tactic.instructions.width;
+    if (w === 'wide') mods[side].oppCentralDefMult *= 0.93;
+    else if (w === 'narrow') mods[side].oppCentralDefMult *= 1.06;
+  }
+
   // Style mismatch: tempo, directness, width, aggression
   const s0 = styleVector(p[0].tactic);
   const s1 = styleVector(p[1].tactic);

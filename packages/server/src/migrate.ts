@@ -387,6 +387,33 @@ alter table clubs set (fillfactor = 70, autovacuum_vacuum_scale_factor = 0.05);
 alter table jobs set (autovacuum_vacuum_scale_factor = 0.05);
 `,
   },
+  {
+    // Signature traits, seed identity (for world data upgrades), private bids with media leaks,
+    // and scouting network missions.
+    version: 4,
+    sql: `
+alter table players add column if not exists traits jsonb not null default '{}';
+alter table players add column if not exists seed_id int;
+create index if not exists players_seed_idx on players(seed_id);
+alter table bids add column if not exists private boolean not null default false;
+alter table bids add column if not exists leak_at timestamptz;
+alter table bids add column if not exists leaked boolean not null default false;
+create index if not exists bids_leak_idx on bids(leak_at) where leak_at is not null;
+create table if not exists scout_missions (
+  id serial primary key,
+  club_id int not null references clubs(id) on delete cascade,
+  region text not null,
+  pos text,
+  age_max int not null default 21,
+  started_at timestamptz not null default now(),
+  ends_at timestamptz not null,
+  status text not null default 'active',
+  found jsonb not null default '[]',
+  reports int not null default 0
+);
+create index if not exists scout_missions_club_idx on scout_missions(club_id, status);
+`,
+  },
 ];
 
 let migrated = false;

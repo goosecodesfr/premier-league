@@ -8,7 +8,7 @@ import type { PlayerRow } from './types.ts';
 
 export const PLAYER_COLS = `id, club_id, status, name, short, first_name, last_name, nat, age, foot, height, positions, attrs, hidden, ca, pa,
   condition, sharpness, form, morale, fatigue_debt, injury, suspended, yellows, wage, contract_until, squad_number, value, flags,
-  form_history, history, joined_season`;
+  form_history, history, joined_season, traits`;
 
 export function isAvailable(p: PlayerRow): boolean {
   return p.status === 'active' && !(p.injury && p.injury.daysLeft > 0) && p.suspended <= 0;
@@ -28,6 +28,7 @@ export function toMatchPlayer(p: PlayerRow): MatchPlayerInput {
   return {
     id: p.id, name: p.name, short: p.short, attrs: attrsOf(p), hidden: hiddenOf(p), fam: p.positions, foot: p.foot,
     age: p.age, condition: p.condition, sharpness: p.sharpness, form: p.form, morale: p.morale, fatigueDebt: p.fatigue_debt,
+    traits: p.traits ?? {},
   };
 }
 

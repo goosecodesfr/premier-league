@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Award, ChevronRight, CirclePlay, Lightbulb, Share2, Zap } from 'lucide-react';
 import type { FixtureData } from '@ffm/server/routes/matches';
+import { PLAYER_INSTRUCTION_OPTIONS, TRAITS, famLabel, type DecisionReport, type PlayerInstructionKey, type TraitKey } from '@ffm/engine';
 import { api } from '../../lib/api';
 import { kickoff, rating1, ratingTone, toneVar } from '../../lib/format';
 import { shareOrDownload } from '../../lib/device';
@@ -29,6 +30,7 @@ interface Summary {
   triggers: { side: number; minute: number; desc: string }[]; modifiers: { side: number; key: string; cause: string; value: number }[];
   word: [string, string]; lineups: [LP[], LP[]]; formations: [string, string]; tactics: { name: string; mentality: number; by: string }[];
   shots: { m: number; ex?: number; side: number; xg: number; o: string; or?: string; z?: number; a?: number }[]; weather: string; derby: boolean;
+  decisions?: [DecisionReport, DecisionReport]; traitGoals?: { m: number; side: number; a: number; tr: string }[];
 }
 
 const ORIGIN: Record<string, string> = { open: 'Open play', cross: 'Crosses', through: 'Through balls', dribble: 'Dribbles', set_piece: 'Set pieces', long_shot: 'Long shots', counter: 'Counters', penalty: 'Penalties' };
@@ -262,6 +264,7 @@ function Analysis({ s, names, mySide }: { s: Summary; names: [string, string]; m
           </div>
         )}
       </Section>
+      {s.decisions && <Decisions s={s} dec={s.decisions} names={names} mySide={mySide} />}
       {s.modifiers.length > 0 && (
         <Section title="Tactical match-ups">
           <List>{s.modifiers.slice(0, 6).map((m, i) => <div key={i} className="flex items-start gap-3 px-4 py-3"><Zap size={16} className="mt-1 shrink-0" style={{ color: m.side === mySide ? 'var(--positive)' : 'var(--negative)' }} /><div className="flex-1 t-body">{m.cause}</div><span className="t-label text-fg3">{names[m.side]}</span></div>)}</List>
@@ -320,3 +323,73 @@ function Heatmaps({ s, names, mySide }: { s: Summary; names: [string, string]; m
 }
 
 void ChevronRight; void EmptyState;
+
+// ---------------------------------------------------------------- your decisions, measured
+function Decisions({ s, dec, names, mySide }: { s: Summary; dec: [DecisionReport, DecisionReport]; names: [string, string]; mySide: number }) {
+  const [side, setSide] = useState<number>(mySide);
+  const nameOf = (sd: number, id: number) => s.lineups[sd].find((p) => p.id === id)?.s ?? 'Player';
+  const d = dec[side];
+  const tg = (s.traitGoals ?? []).filter((g) => TRAITS[g.tr as TraitKey]);
+  return (
+    <>
+      <Section title="Decisions, measured">
+        <Card>
+          <div className="t-label text-fg2 mb-2">What each side's tactical choices actually produced.</div>
+          <div className="flex justify-between t-strong mb-1"><span>{names[0]}</span><span>{names[1]}</span></div>
+          <CompareRow label="Won the ball high up" left={dec[0].pressWinsHigh} right={dec[1].pressWinsHigh} />
+          <CompareRow label="Passes allowed per defensive action" left={dec[0].ppda} right={dec[1].ppda} format={(v) => v.toFixed(1)} lowerBetter />
+          <CompareRow label="Through balls let in behind" left={dec[0].throughCompleted} right={dec[1].throughCompleted} lowerBetter />
+          <CompareRow label="Caught opponents offside" left={dec[0].offsidesWon} right={dec[1].offsidesWon} />
+          <CompareRow label="Counter-attacks" left={dec[0].counters} right={dec[1].counters} />
+          <CompareRow label="Shots from counters" left={dec[0].countersShots} right={dec[1].countersShots} />
+          <CompareRow label="Shots from crosses" left={dec[0].crossesShots} right={dec[1].crossesShots} />
+          <CompareRow label="Long-range shots" left={dec[0].longShots} right={dec[1].longShots} />
+          <CompareRow label="Set-piece xG" left={dec[0].setPieceXg} right={dec[1].setPieceXg} format={(v) => v.toFixed(2)} />
+          <div className="t-caption text-fg3 mt-3 mb-1">Attacks by flank (left / centre / right)</div>
+          {[0, 1].map((i) => (
+            <div key={i} className="flex items-center gap-2 mb-1">
+              <span className="t-label w-20 truncate">{names[i]}</span>
+              <div className="flex h-4 flex-1 rounded overflow-hidden">
+                {dec[i].flank.map((v, j) => <div key={j} className="flex items-center justify-center text-[10px] font-bold text-[#0B0E11]" style={{ width: `${Math.max(v, 6)}%`, background: ['var(--info)', 'var(--accent)', 'var(--warning)'][j] }}>{v}</div>)}
+              </div>
+            </div>
+          ))}
+          <div className="t-label text-fg3 mt-2">A lower "passes allowed" number means a more intense press. Through balls in behind punish a high line without pace.</div>
+        </Card>
+      </Section>
+      <Section title="Players and instructions" action={<Segmented size="sm" value={String(side)} onChange={(v) => setSide(Number(v))} options={[{ value: '0', label: names[0] }, { value: '1', label: names[1] }]} />}>
+        <List>
+          {d.outOfPosition.map((o) => (
+            <Link key={`o${o.playerId}`} to={`/player/${o.playerId}`} className="flex items-center gap-3 px-4 py-2.5 active:bg-raised">
+              <PosBadge pos={o.pos} />
+              <div className="flex-1 min-w-0"><div className="t-body truncate">{nameOf(side, o.playerId)} played out of position</div><div className="t-label text-fg3">{famLabel(o.fam)} there{o.duelsLost > 0 ? ` · beaten ${o.duelsLost} time${o.duelsLost === 1 ? '' : 's'}` : o.passes ? ` · ${o.passesCompleted ?? 0}/${o.passes} passes` : ''}</div></div>
+              <span className="text-[12px] font-bold tabular" style={{ color: toneVar(ratingTone(o.rating)) }}>{rating1(o.rating)}</span>
+            </Link>
+          ))}
+          {d.instructionUse.map((u, i) => {
+            const opt = PLAYER_INSTRUCTION_OPTIONS[u.key as PlayerInstructionKey]?.options.find((x) => x.value === u.value);
+            return (
+              <div key={`i${i}`} className="flex items-center gap-3 px-4 py-2.5">
+                <div className="flex-1 min-w-0"><div className="t-body truncate">{nameOf(side, u.playerId)}: {opt?.label.toLowerCase() ?? u.value}</div><div className="t-label text-fg3">{u.count} {u.stat}</div></div>
+              </div>
+            );
+          })}
+          {d.outOfPosition.length === 0 && d.instructionUse.length === 0 && <div className="px-4 py-3 t-body text-fg2">Everyone played in a familiar position and no individual instructions were set.</div>}
+        </List>
+      </Section>
+      {tg.length > 0 && (
+        <Section title="Goals from signature moves">
+          <List>
+            {tg.map((g, i) => (
+              <div key={i} className="flex items-center gap-3 px-4 h-12">
+                <span className="t-num w-10 text-fg2">{g.m}'</span>
+                <span className="flex-1 t-body truncate">{nameOf(g.side, g.a)}</span>
+                <Badge tone={g.side === mySide ? 'positive' : 'neutral'}>{TRAITS[g.tr as TraitKey].name}</Badge>
+              </div>
+            ))}
+          </List>
+        </Section>
+      )}
+    </>
+  );
+}

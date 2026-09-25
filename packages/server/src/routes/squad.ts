@@ -1,7 +1,8 @@
 // Squad list, player cards, comparison, player actions, contracts, training, treatment room and youth.
 import {
   attrsFromArray, roleRating, roleSuitability, radarValues, displayRating, bestPosition, normaliseTactic, ATTR_KEYS,
-  type Pos, type Tactic,
+  POSITIONS, ROLES, rolesForPosition, rawRoleRating, bestRoleAt, roleWeights, traitList, famLabel, familiarityFactor, ATTR_LABELS, displayAttr,
+  type Pos, type Tactic, type Attributes, type Familiarity, type AttrKey, type RoleKey, type Duty,
 } from '@ffm/engine';
 import { db, tx, type Db } from '../db.ts';
 import { ApiError, bad, route, type Ctx } from '../http/router.ts';
@@ -15,6 +16,74 @@ import {
 } from './common.ts';
 
 // ---------------------------------------------------------------- helpers
+const famFactor = (f: number) => familiarityFactor(f);
+
+/** Every position on the pitch: how familiar he is there and how good his best role there would be. */
+function positionMap(a: Attributes, fam: Familiarity, gk: boolean) {
+  return POSITIONS.filter((pos) => (gk ? pos === 'GK' : pos !== 'GK')).map((pos) => {
+    const f = fam[pos] ?? (gk ? 1 : 0.2);
+    const best = bestRoleAt(a, pos);
+    return { pos, fam: Math.round(f * 100) / 100, famLabel: famLabel(f), role: best.role, roleName: ROLES[best.role].name, duty: best.duty, rating: Math.round(best.rating * famFactor(f)) / 10 };
+  });
+}
+
+/** His rating in every role at every position he can play (familiarity 60%+), best duty per role. */
+function roleTable(a: Attributes, fam: Familiarity, gk: boolean) {
+  const out: { pos: Pos; role: RoleKey; name: string; duty: Duty; rating: number; desc: string }[] = [];
+  for (const pos of POSITIONS) {
+    const f = fam[pos] ?? 0;
+    if (f < 0.6 || (gk !== (pos === 'GK'))) continue;
+    for (const r of rolesForPosition(pos)) {
+      let best = { duty: r.defaultDuty, v: -1 };
+      for (const d of r.duties) { const v = rawRoleRating(a, r.key, d); if (v > best.v) best = { duty: d, v }; }
+      out.push({ pos, role: r.key, name: r.name, duty: best.duty, rating: Math.round(best.v * famFactor(f)) / 10, desc: r.desc });
+    }
+  }
+  // one row per role, at the position where it suits him best
+  const byRole = new Map<string, (typeof out)[number]>();
+  for (const o of out) { const prev = byRole.get(o.role); if (!prev || prev.rating < o.rating) byRole.set(o.role, o); }
+  return [...byRole.values()].sort((x, y) => y.rating - x.rating);
+}
+
+/** Plain-language strengths and weaknesses judged against what his best role needs. */
+function strengthsAndWeaknesses(a: Attributes, fam: Familiarity, ca: number, gk: boolean) {
+  const pos = bestPosition(fam);
+  const best = bestRoleAt(a, pos);
+  const weights = new Map(roleWeights(best.role, best.duty));
+  const keys = (Object.keys(a) as AttrKey[]).filter((k) => gk || !['shotStopping', 'reflexes', 'handling', 'aerialReach', 'oneOnOnes', 'commandOfArea', 'distribution', 'rushingOut'].includes(k));
+  const scored = keys.map((k) => ({ k, v: a[k], w: weights.get(k) ?? 0 }));
+  const strengths = scored.filter((x) => x.v >= Math.max(150, ca * 1.08)).sort((x, y) => (y.v * (1 + y.w * 4)) - (x.v * (1 + x.w * 4))).slice(0, 5)
+    .map((x) => ({ key: x.k, label: ATTR_LABELS[x.k], value: displayAttr(x.v), key4role: x.w >= 0.06 }));
+  const weaknesses = scored.filter((x) => x.w >= 0.04 && x.v <= ca * 0.85).sort((x, y) => (x.v - y.v)).slice(0, 4)
+    .map((x) => ({ key: x.k, label: ATTR_LABELS[x.k], value: displayAttr(x.v), key4role: true }));
+  return { bestPos: pos, bestRole: best.role, bestRoleName: ROLES[best.role].name, bestDuty: best.duty, strengths, weaknesses,
+    keyAttrs: [...weights.entries()].sort((x, y) => y[1] - x[1]).slice(0, 6).map(([k, w]) => ({ key: k, label: ATTR_LABELS[k], value: displayAttr(a[k]), weight: Math.round(w * 100) })) };
+}
+
+/** Per-90 numbers this season (all competitions). */
+async function per90Stats(playerId: number, seasonNo: number) {
+  const r = await db.one<{ mins: number; goals: number; assists: number; xg: number; shots: number; kp: number; pa: number; pc: number; tk: number; int: number; dr: number; cr: number; xa: number; pr: number; pg: number }>(
+    `select coalesce(sum(minutes),0)::int mins, coalesce(sum(goals),0)::int goals, coalesce(sum(assists),0)::int assists, coalesce(sum(xg),0)::float xg, coalesce(sum(shots),0)::int shots,
+       coalesce(sum((stats->>'kp')::int),0)::int kp, coalesce(sum((stats->>'pa')::int),0)::int pa, coalesce(sum((stats->>'pc')::int),0)::int pc,
+       coalesce(sum((stats->>'tk')::int),0)::int tk, coalesce(sum((stats->>'int')::int),0)::int "int", coalesce(sum((stats->>'dr')::int),0)::int dr,
+       coalesce(sum((stats->>'cr')::int),0)::int cr, coalesce(sum((stats->>'xa')::float),0)::float xa, coalesce(sum((stats->>'pr')::int),0)::int pr, coalesce(sum((stats->>'pg')::int),0)::int pg
+     from player_match where player_id = $1 and season_no = $2`, [playerId, seasonNo]);
+  if (!r || r.mins < 90) return null;
+  const f = 90 / r.mins;
+  const v = (x: number, dp = 2) => Math.round(x * f * 10 ** dp) / 10 ** dp;
+  return {
+    minutes: r.mins,
+    rows: [
+      { key: 'goals', label: 'Goals', value: v(r.goals) }, { key: 'xg', label: 'Expected goals', value: v(r.xg) },
+      { key: 'assists', label: 'Assists', value: v(r.assists) }, { key: 'xa', label: 'Expected assists', value: v(r.xa) },
+      { key: 'shots', label: 'Shots', value: v(r.shots, 1) }, { key: 'kp', label: 'Chances created', value: v(r.kp, 1) },
+      { key: 'dr', label: 'Dribbles completed', value: v(r.dr, 1) }, { key: 'cr', label: 'Accurate crosses', value: v(r.cr, 1) },
+      { key: 'pg', label: 'Passes and carries into the final third', value: v(r.pg, 1) },
+      { key: 'passpct', label: 'Pass completion', value: r.pa ? Math.round((r.pc / r.pa) * 100) : 0, unit: '%' },
+      { key: 'def', label: 'Tackles and interceptions', value: v(r.tk + r.int, 1) }, { key: 'pr', label: 'Pressures', value: v(r.pr, 1) },
+    ],
+  };
+}
 /** Rating of a player in the tactic: his lineup slot if picked, otherwise the slot that suits him best. */
 export function tacticRating(p: PlayerRow, tactic: Tactic, lineup: number[]): { rating: number; slot: number; pos: Pos } {
   const a = attrsOf(p);
@@ -143,6 +212,7 @@ export async function playerData(ctx: Ctx) {
   }
   const years = Math.max(0, p.contract_until - w.season_no + 1);
   const releaseCost = Math.round(p.wage * 52 * years * 0.5);
+  const per90 = await per90Stats(p.id, w.season_no);
   const offers = mine ? await db.many<{ id: number; fee: number; buyer: string; status: string }>(`select b.id, b.fee, c.short buyer, b.status from bids b join clubs c on c.id = b.from_club where b.player_id = $1 and b.to_club = $2 and b.status in ('pending','countered')`, [p.id, me!.id]) : [];
   return {
     player: { ...playerLite(p, w.season_no), firstName: p.first_name, lastName: p.last_name, height: p.height, club, familiarity: p.positions, joined: p.joined_season },
@@ -152,6 +222,11 @@ export async function playerData(ctx: Ctx) {
     radar: radarValues(a, gk).map((r) => ({ key: r.key, label: r.label, value: Math.round(r.value) / 10 })),
     radarAvg: await positionAverage(best, gk),
     roles: roleSuitability(a, p.positions, 5).map((r) => ({ ...r, rating: r.rating / 10 })),
+    traits: traitList(p.traits),
+    positions: positionMap(a, p.positions, gk),
+    roleTable: roleTable(a, p.positions, gk),
+    profile: strengthsAndWeaknesses(a, p.positions, p.ca, gk),
+    per90,
     stats: byComp.map((s) => ({ ...s, avg: s.avg ? Math.round(s.avg * 100) / 100 : null, xg: Math.round(s.xg * 10) / 10 })),
     career: career.map((c) => ({ season: c.season_no, club: clubs.get(c.club_id) ?? null, apps: c.apps, goals: c.goals, assists: c.assists, avg: Math.round(c.avg * 100) / 100 })),
     form: recent.reverse().map((r) => {

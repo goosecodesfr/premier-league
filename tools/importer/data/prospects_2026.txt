@@ -1,0 +1,75 @@
+# Research list of the world's top young talents for 2026-27, compiled on 2026-09-25 from:
+#   - Goal.com NXGN 2026: the 50 best teenage wonderkids in football
+#   - Striver: the 10 best Premier League wonderkids of 2026
+#   - Passion4FM / FM Scout Football Manager 2026 wonderkid lists
+# Everyone here is guaranteed to exist in the world with at least the potential of his tier:
+#   A = generational (PA >= 186, CA >= 150)   B = elite (PA >= 178, CA >= 140)
+#   C = world-class prospect (PA >= 170, CA >= 128)   D = top prospect (PA >= 162, CA >= 112)
+# Players missing from the ratings dataset are generated at their real club.
+# Format: Name|Club|Nation|Position|Age (at 1 Sep 2026)|Tier
+Lamine Yamal|FC Barcelona|ESP|AMR|19|A
+Estêvão|Chelsea|BRA|AMR|19|A
+Pau Cubarsí|FC Barcelona|ESP|DC|19|A
+Franco Mastantuono|Real Madrid|ARG|AMR|19|A
+Lennart Karl|FC Bayern München|GER|AMR|18|A
+Max Dowman|Arsenal|ENG|AMC|16|A
+Luka Vušković|Tottenham Hotspur|CRO|DC|19|B
+Ayyoub Bouaddi|LOSC Lille|FRA|MC|18|B
+Geovany Quenda|Sporting CP|POR|AMR|19|B
+Ethan Nwaneri|Arsenal|ENG|AMC|19|B
+Rodrigo Mora|FC Porto|POR|AMC|19|B
+Honest Ahanor|Atalanta|ITA|DL|18|B
+Ibrahim Mbaye|Paris Saint-Germain|SEN|AML|18|B
+Konstantinos Karetsas|KRC Genk|GRE|AMC|18|B
+Rio Ngumoha|Liverpool|ENG|AML|18|B
+Gilberto Mora|Club Tijuana|MEX|MC|17|B
+Marc Bernal|FC Barcelona|ESP|DM|19|B
+Dro Fernández|Paris Saint-Germain|ESP|MC|18|B
+Kendry Páez|Chelsea|ECU|AMC|19|B
+Myles Lewis-Skelly|Arsenal|ENG|DL|19|B
+Jorrel Hato|Chelsea|NED|DL|20|B
+Leny Yoro|Manchester United|FRA|DC|20|B
+Dean Huijsen|Real Madrid|ESP|DC|21|B
+Mohamed Kader Meïté|Al Hilal|FRA|ST|18|C
+Jorthy Mokio|Ajax|BEL|DM|18|C
+Francesco Camarda|AC Milan|ITA|ST|18|C
+Robinio Vaz|Roma|FRA|ST|19|C
+Josh King|Fulham|ENG|MC|19|C
+Charalampos Kostoulas|Brighton & Hove Albion|GRE|ST|19|C
+Mikey Moore|Tottenham Hotspur|ENG|AML|19|C
+Kennet Eichhorn|Hertha BSC|GER|DM|17|C
+Tylel Tati|FC Nantes|FRA|DC|18|C
+Nathan De Cat|RSC Anderlecht|BEL|DM|18|C
+Mateus Mané|Wolverhampton Wanderers|POR|ST|18|C
+Andrija Maksimović|RB Leipzig|SRB|AMC|18|C
+Sean Steur|Ajax|NED|MC|18|C
+Kerim Alajbegović|FC Red Bull Salzburg|BIH|AML|18|C
+Vasilije Kostov|Crvena Zvezda|SRB|MC|17|C
+Quentin Ndjantou|Paris Saint-Germain|FRA|ST|18|C
+Ian Subiabre|River Plate|ARG|AMR|19|C
+Chris Rigg|Sunderland|ENG|MC|19|C
+Karim Coulibaly|SV Werder Bremen|GER|DC|18|C
+Cavan Sullivan|Philadelphia Union|USA|AMC|16|C
+Thiago Pitarch|Real Madrid|ESP|MC|18|C
+Chido Obi|Manchester United|DEN|ST|18|C
+Trey Nyoni|Liverpool|ENG|MC|19|C
+Pau Navarro|Villarreal CF|ESP|DC|21|C
+Jérémy Jacquet|Stade Rennais FC|FRA|DC|21|C
+Guillaume Restes|Toulouse FC|FRA|GK|21|C
+Mike Penders|Chelsea|BEL|GK|21|C
+Vitor Reis|Manchester City|BRA|DC|20|C
+Johan Manzambi|SC Freiburg|SUI|MC|20|C
+Giovanni Leoni|Liverpool|ITA|DC|19|C
+Viktor Dadason|FC København|ISL|ST|17|D
+Álvaro Montoro|Botafogo|ARG|AMC|19|D
+Dastan Satpaev|Kairat Almaty|KAZ|ST|17|D
+Samuele Inácio|Borussia Dortmund|ITA|AMC|17|D
+Oskar Pietuszewski|FC Porto|POL|AML|17|D
+Jeremy Monga|Leicester City|ENG|AMR|16|D
+Joan Martínez|Real Madrid|ESP|DC|18|D
+Anísio Cabral|SL Benfica|POR|ST|18|D
+João Simões|Sporting CP|POR|MC|19|D
+JJ Gabriel|Manchester United|ENG|ST|15|D
+Joane Gadou|FC Red Bull Salzburg|FRA|DC|19|D
+Julio Soler|AFC Bournemouth|ARG|DL|21|D
+Diego León|Manchester United|PAR|DL|19|D

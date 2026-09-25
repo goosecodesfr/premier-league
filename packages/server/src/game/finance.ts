@@ -2,7 +2,7 @@
 import type { Db } from '../db.ts';
 import type { ClubRow, CompType, WorldRow } from './types.ts';
 
-export type LedgerCat = 'gate' | 'tv' | 'prize' | 'sponsor' | 'sale' | 'event' | 'merit' | 'wages' | 'staff' | 'fee' | 'facility' | 'running' | 'interest' | 'compensation';
+export type LedgerCat = 'gate' | 'tv' | 'prize' | 'sponsor' | 'sale' | 'event' | 'merit' | 'wages' | 'staff' | 'fee' | 'facility' | 'running' | 'interest' | 'compensation' | 'scouting';
 const INCOME: LedgerCat[] = ['gate', 'tv', 'prize', 'sponsor', 'sale', 'event', 'merit'];
 
 export async function addLedger(d: Db, clubId: number, seasonNo: number, cat: LedgerCat, amount: number, description: string) {
@@ -18,7 +18,7 @@ export async function addLedger(d: Db, clubId: number, seasonNo: number, cat: Le
   );
 }
 
-export const TV_EQUAL_SHARE = { PL: 60_000_000, EUR: 40_000_000, CHAMP: 12_000_000 } as const;
+export const TV_EQUAL_SHARE = { PL: 60_000_000, EUR: 40_000_000, CHAMP: 12_000_000, WORLD: 6_000_000 } as const;
 
 /** Attendance and gate revenue for a home match. */
 export function gate(club: Pick<ClubRow, 'capacity' | 'reputation' | 'fan_mood' | 'finances'>, opts: { importance: number; oppRep: number; comp: CompType; neutral: boolean }): { attendance: number; revenue: number } {

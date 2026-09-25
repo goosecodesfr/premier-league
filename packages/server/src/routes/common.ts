@@ -103,7 +103,7 @@ export function playerLite(p: PlayerRow, seasonNo: number): PlayerLite {
 /** How much a club knows about a player (0..100). Own players are fully known. */
 export async function knowledgeOf(clubId: number | null, p: Pick<PlayerRow, 'id' | 'club_id'>, league?: string | null): Promise<number> {
   if (clubId && p.club_id === clubId) return 100;
-  let base = league === 'PL' ? 45 : league === 'EUR' ? 25 : 30;
+  let base = league === 'PL' ? 45 : league === 'EUR' ? 25 : league === 'WORLD' ? 15 : 30;
   if (clubId) {
     const s = await db.one<{ knowledge: number }>('select knowledge from scouting where club_id = $1 and player_id = $2', [clubId, p.id]);
     if (s) base = Math.max(base, s.knowledge);

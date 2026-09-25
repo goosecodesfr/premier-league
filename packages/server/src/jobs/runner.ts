@@ -11,6 +11,7 @@ import { lockSlot, playSlot } from '../game/matchday.ts';
 import { progressCompetitions } from '../game/progression.ts';
 import { processBids } from '../game/market.ts';
 import { endSeason, rollover } from '../game/rollover.ts';
+import { ensureWorldData } from '../game/upgrade.ts';
 import { beginSeason } from '../game/season.ts';
 import { broadcast, notifyClub, withOutbox } from '../game/notify.ts';
 import { addNews } from '../game/news.ts';
@@ -50,6 +51,13 @@ export async function tick(opts: { now?: Date; budgetMs?: number; maxJobs?: numb
   if (!(await acquire(holder, Math.ceil(budget / 1000) + 240))) return { ...report, skipped: 'another tick is running' };
   try {
     const now = () => opts.now ?? new Date();
+    // New game data (traits, young talents...) for leagues created before an update.
+    try {
+      const up = await ensureWorldData(db);
+      if (up.upgraded) console.log('world data upgraded:', up.notes.join('; '));
+    } catch (e) {
+      console.error('world data upgrade failed', e);
+    }
     if (world0.paused) {
       report.skipped = 'paused';
     } else {
