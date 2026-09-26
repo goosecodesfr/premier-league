@@ -2,10 +2,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  AlertTriangle, ArrowRight, Ban, Bell, BellRing, Bot, Check, ChevronRight, CircleDollarSign, Clock, FileSignature, Frown, HeartPulse,
-  Loader2, Megaphone, RefreshCw, Shirt, Target, Trophy, Users, X, Zap,
-} from 'lucide-react';
+import { AlertTriangle, ArrowRight, Ban, Bell, BellRing, Bot, Check, ChevronRight, CircleDollarSign, Clock, FileSignature, Frown, HeartPulse, Loader2, Megaphone, RefreshCw, Shirt, Target, Trophy, Users, X, Zap, BookOpen } from 'lucide-react';
 import type { HomeData, InboxData } from '@ffm/server/routes/home';
 import { api } from '../lib/api';
 import { countdown, dayLabel, inWords, kickoff, ago, timeLabel } from '../lib/format';
@@ -175,6 +172,7 @@ export function Home() {
             <div className="t-strong truncate">{me.club?.name}</div>
             <div className="t-label text-fg2 -mt-0.5 truncate">{h?.club.positionLabel ? `${h.club.positionLabel} · ` : ''}{me.world?.season}</div>
           </div>
+          <IconButton label="Guide" onClick={() => nav('/guide')}><BookOpen size={22} /></IconButton>
           <IconButton label="Alerts" badge={me.unread + me.decisions > 0} onClick={() => nav('/alerts')}><Bell size={22} /></IconButton>
         </div>
       </header>

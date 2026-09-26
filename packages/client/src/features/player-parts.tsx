@@ -1,6 +1,7 @@
 // Player understanding: signature traits, where he plays best, his role ratings,
 // strengths and weaknesses, and per-90 numbers.
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { Crosshair, Dumbbell, Hand, Route, Shield, Sparkles, Star, Zap, type LucideIcon } from 'lucide-react';
 import type { PlayerData } from '@ffm/server/routes/squad';
 import { toneVar, type Tone } from '../lib/format';
@@ -32,6 +33,7 @@ export function TraitChips({ traits, compact }: { traits: Trait[]; compact?: boo
           <div className="t-strong">{sel.name.replace(/\+$/, '')}{sel.level >= 2 ? ' (elite)' : ''}</div>
           <div className="t-label text-fg2">{sel.desc}</div>
           <div className="t-label mt-1"><span className="text-fg3">In matches: </span>{sel.effect}{sel.level >= 2 ? ' The elite version is half as strong again.' : ''}</div>
+          <Link to="/guide?tab=words&cat=traits" className="t-label text-accent mt-1 inline-block">All traits explained</Link>
         </div>
       )}
     </div>

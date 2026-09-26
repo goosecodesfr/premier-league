@@ -97,7 +97,7 @@ export function ClubPick() {
 const CARDS = [
   { icon: CalendarClock, title: 'Matches happen without you', body: 'Games kick off on schedule whether anyone is online or not. Set your team before the deadline - if you forget, your assistant picks it. Results, injuries and bids arrive as notifications.' },
   { icon: LayoutGrid, title: 'Tactics decide games', body: 'Formation, roles, instructions and in-game triggers all matter. Before a match you can scout the opponent and run 200 simulations to test your plan. After it, the analysis tells you why you won or lost.' },
-  { icon: Sparkles, title: 'The world never stops', body: 'Bot managers buy, sell, get sacked and hold grudges. Players get injured, sulk, and grow. The transfer window is open now: strengthen your squad before the first kick-off.' },
+  { icon: Sparkles, title: 'The world never stops', body: 'Bot managers buy, sell, get sacked and hold grudges. Players get injured, sulk, and grow. The transfer window is open now: strengthen your squad before the first kick-off. New to football words? Tap the book icon on Home for the guide.' },
 ];
 
 export function Tour() {

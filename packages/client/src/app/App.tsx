@@ -37,6 +37,7 @@ const club = () => import('../features/club');
 const transfers = () => import('../features/transfers');
 const media = () => import('../features/media');
 const settings = () => import('../features/settings');
+const guide = () => import('../features/guide');
 
 function Loading() {
   return <div className="px-4 pt-20"><SkeletonCards n={4} /></div>;
@@ -103,6 +104,7 @@ const router = createBrowserRouter([
           { path: '/settings', element: <Frame>{page(settings, 'Settings')}</Frame> },
           { path: '/settings/notifications', element: <Frame>{page(settings, 'NotificationSettings')}</Frame> },
           { path: '/settings/admin', element: <Frame>{page(settings, 'Admin')}</Frame> },
+          { path: '/guide', element: <Frame>{page(guide, 'Guide')}</Frame> },
           { path: '*', element: <NotFound /> },
         ],
       },

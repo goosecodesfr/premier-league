@@ -1,6 +1,7 @@
 // Tactic editor tabs: instructions, set pieces and triggers.
 import { useState, type ReactNode } from 'react';
-import { ChevronDown, Plus, Trash2 } from 'lucide-react';
+import { Link } from 'react-router';
+import { BookOpen, ChevronDown, Plus, Trash2 } from 'lucide-react';
 import {
   INSTRUCTION_GROUPS, INSTRUCTION_LABELS, INSTRUCTION_OPTIONS, MENTALITY_LABELS, OPTION_LABELS, PRESETS, countNonDefault, DEFAULT_INSTRUCTIONS,
   type Instructions, type SetPieces, type Tactic, type Trigger, type TriggerAction, type TriggerCondition,
@@ -19,6 +20,7 @@ export function InstructionsTab({ t, onChange }: { t: Tactic; onChange: (t: Tact
   const set = <K extends keyof Instructions>(k: K, v: Instructions[K]) => onChange({ ...t, instructions: { ...t.instructions, [k]: v } });
   return (
     <div className="pb-4">
+      <Link to="/guide?tab=tactics" className="flex items-center gap-2 rounded-xl bg-raised px-3 py-2.5 mb-4 t-label"><BookOpen size={16} className="text-accent shrink-0" /><span className="flex-1">What do these mean? Every instruction explained in plain words.</span><ChevronDown size={16} className="-rotate-90 text-fg3" /></Link>
       <div className="t-caption text-fg3 mb-2">Presets</div>
       <ChipRow className="mb-5">
         {Object.entries(PRESETS).map(([k, p]) => (

@@ -530,6 +530,7 @@ function SlotSheet(props: {
               );
             })}
           </List>
+          <Link to="/guide?tab=tactics" className="t-label text-accent inline-block mb-3">Roles and duties explained</Link>
           <div className="t-caption text-fg3 mb-2">Duty</div>
           <Segmented value={slot.duty} onChange={(v) => props.onRole(slotIdx, slot.role, v as Duty)}
             options={ROLES[slot.role].duties.map((dt) => ({ value: dt, label: dt === 'D' ? 'Defend' : dt === 'S' ? 'Support' : 'Attack' }))} />

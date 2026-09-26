@@ -2,10 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  ArrowRightLeft, Banknote, Bot, Building2, CalendarCheck2, ChevronRight, Dumbbell, GalleryHorizontalEnd, GraduationCap, HeartPulse, Handshake, Landmark,
-  Newspaper, Settings as SettingsIcon, Stethoscope, Target, Telescope, TrendingDown, TrendingUp, Trophy, Users,
-} from 'lucide-react';
+import { ArrowRightLeft, Banknote, Bot, Building2, CalendarCheck2, ChevronRight, Dumbbell, GalleryHorizontalEnd, GraduationCap, HeartPulse, Handshake, Landmark, Newspaper, Settings as SettingsIcon, Stethoscope, Target, Telescope, TrendingDown, TrendingUp, Trophy, Users, BookOpen } from 'lucide-react';
 import type { ClubOverviewData, FinancesData, TrophiesData } from '@ffm/server/routes/club';
 import { api } from '../lib/api';
 import { dateLabel, money, shortDate, wage } from '../lib/format';
@@ -94,6 +91,7 @@ export function ClubOverview() {
                   <ListRow icon={<Newspaper size={18} />} title="News" to="/media" />
                   <ListRow icon={<GalleryHorizontalEnd size={18} />} title="Media gallery" to="/media/gallery" />
                   <ListRow icon={<CalendarCheck2 size={18} />} title="Season review" to="/season/review" />
+                  <ListRow icon={<BookOpen size={18} />} title="Guide" subtitle="How to play, and every term explained" to="/guide" />
                   <ListRow icon={<SettingsIcon size={18} />} title="Settings" to="/settings" />
                 </List>
               </Section>
